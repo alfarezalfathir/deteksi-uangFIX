@@ -1,12 +1,28 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const mysql = require("mysql2");
 
 const app = express();
 const axios = require("axios");
 
+const db = mysql.createConnection({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "money_detector",
+});
+
+db.connect((err) => {
+  if (err) {
+    console.log(err);
+  } else {
+    console.log("MySQL Connected");
+  }
+});
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 /*
 ========================
@@ -21,6 +37,18 @@ app.post("/detect", async (req, res) => {
     const response = await axios.post("http://127.0.0.1:8000/detect", {
       image: req.body.image,
     });
+    const result = response.data.result;
+    const confidence = response.data.confidence;
+
+    db.query(
+      "INSERT INTO transactions (result, confidence) VALUES (?, ?)",
+      [result, confidence],
+      (err, data) => {
+        if (err) {
+          console.log(err);
+        }
+      },
+    );
 
     res.json(response.data);
   } catch (error) {
@@ -30,6 +58,20 @@ app.post("/detect", async (req, res) => {
       error: "Python detection error",
     });
   }
+});
+
+app.get("/transactions", (req, res) => {
+  db.query("SELECT * FROM transactions ORDER BY id DESC", (err, result) => {
+    if (err) {
+      console.log(err);
+
+      res.status(500).json({
+        error: "Database error",
+      });
+    } else {
+      res.json(result);
+    }
+  });
 });
 
 /*

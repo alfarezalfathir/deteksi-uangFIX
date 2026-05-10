@@ -9,11 +9,14 @@ function App() {
   const [color, setColor] = useState("#94a3b8");
   const [confidence, setConfidence] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
     startCamera();
+    fetchTransactions();
   }, []);
 
   useEffect(() => {
@@ -23,12 +26,22 @@ function App() {
     }
   }, [isScanning]);
 
+  const fetchTransactions = async () => {
+    try {
+      const response = await axios.get("/transactions");
+      setTransactions(response.data);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false,
       });
+
       videoRef.current.srcObject = stream;
     } catch (error) {
       console.log(error);
@@ -37,7 +50,9 @@ function App() {
 
   const startScan = () => {
     if (intervalRef.current) return;
+
     setIsScanning(true);
+
     intervalRef.current = setInterval(() => {
       captureFrame();
     }, 1500);
@@ -45,6 +60,7 @@ function App() {
 
   const stopScan = () => {
     setIsScanning(false);
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -54,16 +70,26 @@ function App() {
   const captureFrame = async () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+
     const context = canvas.getContext("2d");
+
     canvas.width = 640;
     canvas.height = 480;
+
     context.drawImage(video, 0, 0);
+
     const image = canvas.toDataURL("image/jpeg", 0.6);
+
     try {
-      const response = await axios.post("/detect", { image });
+      const response = await axios.post("/detect", {
+        image,
+      });
+
       setResult(response.data.result);
       setColor(response.data.color);
       setConfidence(response.data.confidence);
+
+      fetchTransactions();
     } catch (error) {
       console.log(error);
     }
@@ -77,6 +103,7 @@ function App() {
         : confidence > 0
           ? "LOW"
           : "—";
+
   const confidenceColor =
     confidence >= 85
       ? "#10b981"
@@ -88,10 +115,9 @@ function App() {
 
   return (
     <div style={styles.root}>
-      {/* Subtle grid overlay */}
       <div style={styles.gridOverlay} />
 
-      {/* Header */}
+      {/* HEADER */}
       <header style={styles.header}>
         <div style={styles.logoArea}>
           <div style={styles.logoIcon}>
@@ -108,11 +134,13 @@ function App() {
               <path d="M6 12h.01M18 12h.01" />
             </svg>
           </div>
+
           <div>
             <div style={styles.logoName}>VaultScan</div>
             <div style={styles.logoSub}>Banknote Authentication</div>
           </div>
         </div>
+
         <div style={styles.headerBadge}>
           <span
             style={{
@@ -120,22 +148,22 @@ function App() {
               background: isScanning ? "#10b981" : "#64748b",
             }}
           />
+
           {isScanning ? "ACTIVE" : "STANDBY"}
         </div>
       </header>
 
-      {/* Divider */}
       <div style={styles.divider} />
 
-      {/* Main content */}
+      {/* MAIN */}
       <main style={styles.main}>
-        {/* Camera card */}
+        {/* CAMERA */}
         <div style={styles.cameraCard}>
           <div style={styles.cameraLabel}>LIVE FEED</div>
+
           <div style={styles.cameraViewport}>
             <video ref={videoRef} autoPlay playsInline style={styles.video} />
 
-            {/* Corner decorators */}
             {["tl", "tr", "bl", "br"].map((pos) => (
               <div
                 key={pos}
@@ -147,20 +175,15 @@ function App() {
               />
             ))}
 
-            {/* Guide box */}
             <div
               style={{
                 ...styles.guideBox,
                 borderColor: isScanning ? "#c9a84c" : "#475569",
-                boxShadow: isScanning
-                  ? `0 0 0 1px rgba(201,168,76,0.15), inset 0 0 30px rgba(201,168,76,0.04)`
-                  : "none",
               }}
             >
-              <div style={styles.guideLabel}>Align banknote here</div>
+              <div style={styles.guideLabel}>Align watermark here</div>
             </div>
 
-            {/* Scan line */}
             {isScanning && (
               <div
                 style={{
@@ -173,7 +196,7 @@ function App() {
           </div>
         </div>
 
-        {/* Controls */}
+        {/* BUTTONS */}
         <div style={styles.controls}>
           <button
             onClick={startScan}
@@ -184,17 +207,9 @@ function App() {
               opacity: isScanning ? 0.45 : 1,
             }}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              style={{ marginRight: 6 }}
-            >
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
             START SCAN
           </button>
+
           <button
             onClick={stopScan}
             disabled={!isScanning}
@@ -204,24 +219,15 @@ function App() {
               opacity: !isScanning ? 0.45 : 1,
             }}
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              style={{ marginRight: 6 }}
-            >
-              <rect x="4" y="4" width="16" height="16" />
-            </svg>
             STOP
           </button>
         </div>
 
-        {/* Result panel */}
+        {/* RESULT */}
         <div style={styles.resultPanel}>
-          {/* Result header */}
           <div style={styles.resultHeader}>
             <span style={styles.resultHeaderLabel}>SCAN RESULT</span>
+
             <span
               style={{
                 ...styles.resultStatus,
@@ -237,7 +243,6 @@ function App() {
 
           <div style={styles.resultDivider} />
 
-          {/* Main result */}
           <div style={styles.resultMain}>
             <div
               style={{
@@ -247,17 +252,18 @@ function App() {
             >
               {result || "—"}
             </div>
+
             {result && (
-              <div style={styles.resultSubtext}>Detected denomination</div>
+              <div style={styles.resultSubtext}>Currency verification</div>
             )}
           </div>
 
           <div style={styles.resultDivider} />
 
-          {/* Metrics row */}
           <div style={styles.metricsRow}>
             <div style={styles.metric}>
               <div style={styles.metricLabel}>CONFIDENCE</div>
+
               <div style={styles.metricBar}>
                 <div
                   style={{
@@ -267,13 +273,22 @@ function App() {
                   }}
                 />
               </div>
-              <div style={{ ...styles.metricValue, color: confidenceColor }}>
+
+              <div
+                style={{
+                  ...styles.metricValue,
+                  color: confidenceColor,
+                }}
+              >
                 {confidence > 0 ? `${confidence}%` : "—"}
               </div>
             </div>
+
             <div style={styles.metricSep} />
+
             <div style={styles.metric}>
               <div style={styles.metricLabel}>CERTAINTY</div>
+
               <div
                 style={{
                   ...styles.certBadge,
@@ -284,9 +299,12 @@ function App() {
                 {confidenceLevel}
               </div>
             </div>
+
             <div style={styles.metricSep} />
+
             <div style={styles.metric}>
               <div style={styles.metricLabel}>STATUS</div>
+
               <div style={styles.metricValue}>
                 {isScanning ? "ACTIVE" : "IDLE"}
               </div>
@@ -294,23 +312,43 @@ function App() {
           </div>
         </div>
 
-        {/* Footer note */}
-        <div style={styles.footer}>
-          <svg
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            style={{ marginRight: 5, opacity: 0.4 }}
-          >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4M12 16h.01" />
-          </svg>
-          For verification purposes only. Always confirm with official
-          equipment.
+        {/* HISTORY */}
+        <div style={styles.historyPanel}>
+          <div style={styles.historyHeader}>RECENT TRANSACTIONS</div>
+
+          {transactions.length === 0 ? (
+            <div style={styles.emptyHistory}>No transactions yet</div>
+          ) : (
+            transactions.slice(0, 5).map((item) => (
+              <div key={item.id} style={styles.historyItem}>
+                <div>
+                  <div
+                    style={{
+                      ...styles.historyResult,
+                      color:
+                        item.result === "ASLI"
+                          ? "#10b981"
+                          : item.result === "MERAGUKAN"
+                            ? "#f59e0b"
+                            : "#ef4444",
+                    }}
+                  >
+                    {item.result}
+                  </div>
+
+                  <div style={styles.historyDate}>
+                    {new Date(item.created_at).toLocaleString()}
+                  </div>
+                </div>
+
+                <div style={styles.historyConfidence}>{item.confidence}%</div>
+              </div>
+            ))
+          )}
         </div>
+
+        {/* FOOTER */}
+        <div style={styles.footer}>For verification purposes only</div>
       </main>
 
       <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -325,10 +363,11 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    fontFamily: "'DM Sans', 'Segoe UI', sans-serif",
+    fontFamily: "'DM Sans', sans-serif",
     position: "relative",
     overflow: "hidden",
   },
+
   gridOverlay: {
     position: "absolute",
     inset: 0,
@@ -337,309 +376,348 @@ const styles = {
       linear-gradient(90deg, rgba(201,168,76,0.03) 1px, transparent 1px)
     `,
     backgroundSize: "40px 40px",
-    pointerEvents: "none",
   },
+
   header: {
     width: "100%",
     maxWidth: 420,
     display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     padding: "22px 20px 16px",
     zIndex: 1,
   },
+
   logoArea: {
     display: "flex",
-    alignItems: "center",
     gap: 10,
+    alignItems: "center",
   },
+
   logoIcon: {
     width: 36,
     height: 36,
-    background: "linear-gradient(135deg, #c9a84c 0%, #e8cc7e 100%)",
     borderRadius: 8,
+    background: "linear-gradient(135deg,#c9a84c,#e8cc7e)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     color: "#1a0f00",
-    flexShrink: 0,
   },
+
   logoName: {
-    fontSize: 15,
+    color: "#fff",
     fontWeight: 700,
-    color: "#f1f5f9",
-    letterSpacing: "0.04em",
+    fontSize: 15,
   },
+
   logoSub: {
-    fontSize: 10,
     color: "#64748b",
+    fontSize: 10,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
+
   headerBadge: {
     fontSize: 10,
-    letterSpacing: "0.12em",
-    color: "#64748b",
+    color: "#94a3b8",
     border: "1px solid #1e293b",
     borderRadius: 20,
     padding: "4px 10px",
     display: "flex",
     alignItems: "center",
     gap: 5,
-    fontWeight: 600,
   },
+
   dot: {
     width: 6,
     height: 6,
     borderRadius: "50%",
-    display: "inline-block",
-    transition: "background 0.3s",
   },
+
   divider: {
     width: "calc(100% - 40px)",
     maxWidth: 420,
     height: 1,
     background:
-      "linear-gradient(90deg, transparent, #1e293b 30%, #c9a84c33 60%, #1e293b 80%, transparent)",
+      "linear-gradient(90deg,transparent,#1e293b,#c9a84c33,#1e293b,transparent)",
   },
+
   main: {
     width: "100%",
     maxWidth: 420,
-    padding: "20px 20px 32px",
+    padding: 20,
     display: "flex",
     flexDirection: "column",
     gap: 16,
     zIndex: 1,
   },
+
   cameraCard: {
     background: "#0d1829",
     border: "1px solid #1e2d45",
     borderRadius: 16,
     overflow: "hidden",
   },
+
   cameraLabel: {
     fontSize: 9,
+    color: "#64748b",
+    padding: "10px 14px",
     letterSpacing: "0.18em",
-    color: "#475569",
-    fontWeight: 700,
-    padding: "8px 14px 6px",
-    borderBottom: "1px solid #111d2e",
   },
+
   cameraViewport: {
     position: "relative",
-    width: "100%",
     aspectRatio: "4/3",
-    overflow: "hidden",
     background: "#000",
+    overflow: "hidden",
   },
+
   video: {
     width: "100%",
     height: "100%",
     objectFit: "cover",
-    display: "block",
   },
+
+  guideBox: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: "60%",
+    height: "42%",
+    border: "1.5px dashed",
+    borderRadius: 8,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingBottom: 6,
+  },
+
+  guideLabel: {
+    fontSize: 9,
+    color: "#c9a84c",
+    letterSpacing: "0.08em",
+  },
+
+  scanLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    background:
+      "linear-gradient(90deg,transparent,#c9a84c,#fff,#c9a84c,transparent)",
+  },
+
   corner: {
     position: "absolute",
     width: 16,
     height: 16,
     borderWidth: 2,
     borderStyle: "solid",
-    transition: "border-color 0.4s",
   },
+
   corner_tl: {
     top: 12,
     left: 12,
     borderRight: "none",
     borderBottom: "none",
-    borderRadius: "3px 0 0 0",
   },
+
   corner_tr: {
     top: 12,
     right: 12,
     borderLeft: "none",
     borderBottom: "none",
-    borderRadius: "0 3px 0 0",
   },
+
   corner_bl: {
     bottom: 12,
     left: 12,
     borderRight: "none",
     borderTop: "none",
-    borderRadius: "0 0 0 3px",
   },
+
   corner_br: {
     bottom: 12,
     right: 12,
     borderLeft: "none",
     borderTop: "none",
-    borderRadius: "0 0 3px 0",
   },
-  guideBox: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    width: "62%",
-    height: "44%",
-    border: "1.5px dashed",
-    borderRadius: 6,
-    transition: "border-color 0.4s, box-shadow 0.4s",
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingBottom: 6,
-  },
-  guideLabel: {
-    fontSize: 9,
-    letterSpacing: "0.1em",
-    color: "rgba(201,168,76,0.5)",
-    fontWeight: 600,
-    textTransform: "uppercase",
-  },
-  scanLine: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    background:
-      "linear-gradient(90deg, transparent, #c9a84c80 20%, #c9a84c 50%, #c9a84c80 80%, transparent)",
-    pointerEvents: "none",
-  },
+
   controls: {
     display: "flex",
     gap: 10,
   },
+
   btn: {
     flex: 1,
-    padding: "12px 0",
     border: "none",
     borderRadius: 10,
-    fontSize: 11,
+    padding: "12px 0",
     fontWeight: 700,
-    letterSpacing: "0.1em",
     cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "opacity 0.2s, transform 0.1s",
   },
+
   btnStart: {
-    background:
-      "linear-gradient(135deg, #b8902e 0%, #e8cc7e 50%, #b8902e 100%)",
+    background: "linear-gradient(135deg,#b8902e,#e8cc7e,#b8902e)",
     color: "#1a0f00",
   },
+
   btnStop: {
     background: "#0d1829",
-    color: "#94a3b8",
     border: "1px solid #1e293b",
+    color: "#94a3b8",
   },
+
   resultPanel: {
     background: "#0d1829",
     border: "1px solid #1e2d45",
     borderRadius: 16,
     overflow: "hidden",
   },
+
   resultHeader: {
     display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
-    padding: "10px 14px",
+    padding: "12px 14px",
   },
+
   resultHeaderLabel: {
-    fontSize: 9,
-    letterSpacing: "0.18em",
-    color: "#475569",
-    fontWeight: 700,
+    fontSize: 10,
+    color: "#64748b",
+    letterSpacing: "0.15em",
   },
+
   resultStatus: {
-    fontSize: 9,
-    fontWeight: 700,
-    letterSpacing: "0.1em",
     padding: "3px 8px",
     borderRadius: 20,
-    transition: "all 0.3s",
+    fontSize: 9,
+    fontWeight: 700,
   },
+
   resultDivider: {
     height: 1,
     background: "#111d2e",
   },
+
   resultMain: {
-    padding: "18px 14px 16px",
+    padding: 20,
     textAlign: "center",
   },
+
   resultValue: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: 700,
-    letterSpacing: "0.02em",
-    transition: "color 0.3s",
-    minHeight: 36,
   },
+
   resultSubtext: {
+    color: "#64748b",
     fontSize: 10,
-    color: "#475569",
-    letterSpacing: "0.1em",
     marginTop: 4,
-    textTransform: "uppercase",
   },
+
   metricsRow: {
     display: "flex",
     alignItems: "center",
-    padding: "12px 14px",
-    gap: 0,
+    padding: 14,
   },
+
   metric: {
     flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-    alignItems: "center",
+    textAlign: "center",
   },
+
   metricLabel: {
     fontSize: 8,
-    letterSpacing: "0.15em",
-    color: "#334155",
-    fontWeight: 700,
+    color: "#475569",
+    marginBottom: 6,
   },
+
   metricBar: {
-    width: "100%",
     height: 3,
     background: "#1e293b",
     borderRadius: 2,
     overflow: "hidden",
-    maxWidth: 70,
+    marginBottom: 6,
   },
+
   metricFill: {
     height: "100%",
-    borderRadius: 2,
-    transition: "width 0.4s ease, background 0.4s",
   },
+
   metricValue: {
-    fontSize: 12,
+    color: "#fff",
     fontWeight: 700,
-    color: "#94a3b8",
-    letterSpacing: "0.05em",
   },
-  certBadge: {
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: "0.1em",
-    padding: "3px 10px",
-    borderRadius: 4,
-    transition: "all 0.3s",
-  },
+
   metricSep: {
     width: 1,
     height: 28,
     background: "#1e293b",
-    flexShrink: 0,
+    margin: "0 10px",
   },
+
+  certBadge: {
+    padding: "4px 8px",
+    borderRadius: 4,
+    fontWeight: 700,
+    fontSize: 10,
+  },
+
+  historyPanel: {
+    background: "#0d1829",
+    border: "1px solid #1e2d45",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+
+  historyHeader: {
+    padding: "12px 14px",
+    fontSize: 10,
+    letterSpacing: "0.18em",
+    color: "#64748b",
+    fontWeight: 700,
+    borderBottom: "1px solid #111d2e",
+  },
+
+  emptyHistory: {
+    padding: 20,
+    textAlign: "center",
+    color: "#475569",
+    fontSize: 12,
+  },
+
+  historyItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 14px",
+    borderBottom: "1px solid #111d2e",
+  },
+
+  historyResult: {
+    fontSize: 13,
+    fontWeight: 700,
+  },
+
+  historyDate: {
+    fontSize: 10,
+    color: "#475569",
+    marginTop: 3,
+  },
+
+  historyConfidence: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#e2e8f0",
+  },
+
   footer: {
     fontSize: 10,
     color: "#334155",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    letterSpacing: "0.02em",
+    textAlign: "center",
     paddingTop: 4,
   },
 };
