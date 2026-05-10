@@ -11,6 +11,7 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [totalPayment, setTotalPayment] = useState(50000);
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -36,11 +37,15 @@ function App() {
     }
   };
 
-  // FIX CAMERA
+  // START CAMERA
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
 
@@ -50,8 +55,8 @@ function App() {
     }
   };
 
+  // START SCAN
   const startScan = async () => {
-    // CASH METHOD
     if (paymentMethod === "cash") {
       if (intervalRef.current) return;
 
@@ -59,13 +64,10 @@ function App() {
 
       intervalRef.current = setInterval(() => {
         captureFrame();
-      }, 1500);
-    }
-
-    // DEBIT METHOD
-    else if (paymentMethod === "debit") {
+      }, 1800);
+    } else if (paymentMethod === "debit") {
       try {
-        const response = await axios.post("/detect", {
+        await axios.post("/detect", {
           image: null,
           payment_method: "debit",
         });
@@ -78,12 +80,9 @@ function App() {
       } catch (error) {
         console.log(error);
       }
-    }
-
-    // EWALLET METHOD
-    else if (paymentMethod === "ewallet") {
+    } else if (paymentMethod === "ewallet") {
       try {
-        const response = await axios.post("/detect", {
+        await axios.post("/detect", {
           image: null,
           payment_method: "ewallet",
         });
@@ -99,6 +98,7 @@ function App() {
     }
   };
 
+  // STOP SCAN
   const stopScan = () => {
     setIsScanning(false);
 
@@ -108,18 +108,23 @@ function App() {
     }
   };
 
+  // CAPTURE FRAME
   const captureFrame = async () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+
+    if (!video || video.readyState !== 4) return;
 
     const context = canvas.getContext("2d");
 
     canvas.width = 640;
     canvas.height = 480;
 
-    context.drawImage(video, 0, 0);
+    // MIRROR FIX
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const image = canvas.toDataURL("image/jpeg", 0.6);
+    // QUALITY IMPROVE
+    const image = canvas.toDataURL("image/jpeg", 0.9);
 
     try {
       const response = await axios.post("/detect", {
@@ -132,6 +137,11 @@ function App() {
       setConfidence(response.data.confidence);
 
       fetchTransactions();
+
+      // AUTO STOP KALO SUDAH ASLI
+      if (response.data.result === "ASLI" && response.data.confidence >= 90) {
+        stopScan();
+      }
     } catch (error) {
       console.log(error);
     }
@@ -162,20 +172,7 @@ function App() {
       {/* HEADER */}
       <header style={styles.header}>
         <div style={styles.logoArea}>
-          <div style={styles.logoIcon}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <rect x="2" y="6" width="20" height="12" rx="2" />
-              <circle cx="12" cy="12" r="3" />
-              <path d="M6 12h.01M18 12h.01" />
-            </svg>
-          </div>
+          <div style={styles.logoIcon}>💵</div>
 
           <div>
             <div style={styles.logoName}>VaultScan</div>
@@ -204,7 +201,13 @@ function App() {
           <div style={styles.cameraLabel}>LIVE FEED</div>
 
           <div style={styles.cameraViewport}>
-            <video ref={videoRef} autoPlay playsInline style={styles.video} />
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={styles.video}
+            />
 
             {["tl", "tr", "bl", "br"].map((pos) => (
               <div
@@ -223,18 +226,44 @@ function App() {
                 borderColor: isScanning ? "#c9a84c" : "#475569",
               }}
             >
-              <div style={styles.guideLabel}>Align watermark here</div>
+              <div style={styles.guideLabel}>Align money inside box</div>
             </div>
 
             {isScanning && (
               <div
                 style={{
                   ...styles.scanLine,
-                  top: pulse ? "30%" : "70%",
+                  top: pulse ? "25%" : "75%",
                   transition: "top 0.9s ease-in-out",
                 }}
               />
             )}
+          </div>
+        </div>
+
+        {/* TOTAL PAYMENT */}
+        <div style={styles.paymentPanel}>
+          <div style={styles.paymentTitle}>TOTAL PAYMENT</div>
+
+          <div
+            style={{
+              color: "#fff",
+              fontSize: 28,
+              fontWeight: 700,
+              marginTop: 6,
+            }}
+          >
+            Rp {totalPayment.toLocaleString("id-ID")}
+          </div>
+
+          <div
+            style={{
+              color: "#64748b",
+              fontSize: 11,
+              marginTop: 6,
+            }}
+          >
+            Amount to be paid
           </div>
         </div>
 
@@ -278,7 +307,7 @@ function App() {
           </div>
         </div>
 
-        {/* BUTTONS */}
+        {/* BUTTON */}
         <div style={styles.controls}>
           <button
             onClick={startScan}
@@ -418,14 +447,33 @@ function App() {
                     {item.result}
                   </div>
 
-                  <div style={styles.historyDate}>
-                    {new Date(item.created_at).toLocaleString()}
-                  </div>
-
                   <div style={styles.historyMethod}>{item.payment_method}</div>
+
+                  <div style={styles.historyDate}>Amount: Rp {item.amount}</div>
+
+                  <div style={styles.historyDate}>
+                    Contract: {item.contract_code}
+                  </div>
                 </div>
 
-                <div style={styles.historyConfidence}>{item.confidence}%</div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={styles.historyConfidence}>{item.confidence}%</div>
+
+                  <div
+                    style={{
+                      fontSize: 10,
+                      marginTop: 4,
+                      color:
+                        item.status === "SUCCESS"
+                          ? "#10b981"
+                          : item.status === "WARNING"
+                            ? "#f59e0b"
+                            : "#ef4444",
+                    }}
+                  >
+                    {item.status}
+                  </div>
+                </div>
               </div>
             ))
           )}
@@ -487,6 +535,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     color: "#1a0f00",
+    fontSize: 20,
   },
 
   logoName: {
