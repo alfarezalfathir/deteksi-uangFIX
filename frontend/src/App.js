@@ -11,7 +11,6 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [totalPayment, setTotalPayment] = useState(50000);
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -120,10 +119,8 @@ function App() {
     canvas.width = 640;
     canvas.height = 480;
 
-    // MIRROR FIX
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // QUALITY IMPROVE
     const image = canvas.toDataURL("image/jpeg", 0.9);
 
     try {
@@ -138,7 +135,6 @@ function App() {
 
       fetchTransactions();
 
-      // AUTO STOP KALO SUDAH ASLI
       if (response.data.result === "ASLI" && response.data.confidence >= 90) {
         stopScan();
       }
@@ -238,32 +234,6 @@ function App() {
                 }}
               />
             )}
-          </div>
-        </div>
-
-        {/* TOTAL PAYMENT */}
-        <div style={styles.paymentPanel}>
-          <div style={styles.paymentTitle}>TOTAL PAYMENT</div>
-
-          <div
-            style={{
-              color: "#fff",
-              fontSize: 28,
-              fontWeight: 700,
-              marginTop: 6,
-            }}
-          >
-            Rp {totalPayment.toLocaleString("id-ID")}
-          </div>
-
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: 11,
-              marginTop: 6,
-            }}
-          >
-            Amount to be paid
           </div>
         </div>
 
