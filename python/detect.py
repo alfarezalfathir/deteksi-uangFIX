@@ -27,6 +27,14 @@ def detect():
     # grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    # 🔥 ROI (FOCUS TENGAH LAYAR)
+    h, w = gray.shape
+
+    gray = gray[
+        int(h*0.35):int(h*0.65),
+        int(w*0.35):int(w*0.65)
+    ]
+
     # blur
     blur = cv2.GaussianBlur(gray, (5,5), 0)
 
