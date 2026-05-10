@@ -10,6 +10,7 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -35,6 +36,7 @@ function App() {
     }
   };
 
+  // FIX CAMERA
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -48,14 +50,53 @@ function App() {
     }
   };
 
-  const startScan = () => {
-    if (intervalRef.current) return;
+  const startScan = async () => {
+    // CASH METHOD
+    if (paymentMethod === "cash") {
+      if (intervalRef.current) return;
 
-    setIsScanning(true);
+      setIsScanning(true);
 
-    intervalRef.current = setInterval(() => {
-      captureFrame();
-    }, 1500);
+      intervalRef.current = setInterval(() => {
+        captureFrame();
+      }, 1500);
+    }
+
+    // DEBIT METHOD
+    else if (paymentMethod === "debit") {
+      try {
+        const response = await axios.post("/detect", {
+          image: null,
+          payment_method: "debit",
+        });
+
+        setResult("DEBIT SUCCESS");
+        setColor("#3b82f6");
+        setConfidence(100);
+
+        fetchTransactions();
+      } catch (error) {
+        console.log(error);
+      }
+    }
+
+    // EWALLET METHOD
+    else if (paymentMethod === "ewallet") {
+      try {
+        const response = await axios.post("/detect", {
+          image: null,
+          payment_method: "ewallet",
+        });
+
+        setResult("E-WALLET SUCCESS");
+        setColor("#10b981");
+        setConfidence(100);
+
+        fetchTransactions();
+      } catch (error) {
+        console.log(error);
+      }
+    }
   };
 
   const stopScan = () => {
@@ -83,6 +124,7 @@ function App() {
     try {
       const response = await axios.post("/detect", {
         image,
+        payment_method: paymentMethod,
       });
 
       setResult(response.data.result);
@@ -193,6 +235,46 @@ function App() {
                 }}
               />
             )}
+          </div>
+        </div>
+
+        {/* PAYMENT METHOD */}
+        <div style={styles.paymentPanel}>
+          <div style={styles.paymentTitle}>PAYMENT METHOD</div>
+
+          <div style={styles.paymentButtons}>
+            <button
+              onClick={() => setPaymentMethod("cash")}
+              style={{
+                ...styles.payBtn,
+                background: paymentMethod === "cash" ? "#c9a84c" : "#0d1829",
+                color: paymentMethod === "cash" ? "#1a0f00" : "#94a3b8",
+              }}
+            >
+              CASH
+            </button>
+
+            <button
+              onClick={() => setPaymentMethod("debit")}
+              style={{
+                ...styles.payBtn,
+                background: paymentMethod === "debit" ? "#3b82f6" : "#0d1829",
+                color: paymentMethod === "debit" ? "#ffffff" : "#94a3b8",
+              }}
+            >
+              DEBIT
+            </button>
+
+            <button
+              onClick={() => setPaymentMethod("ewallet")}
+              style={{
+                ...styles.payBtn,
+                background: paymentMethod === "ewallet" ? "#10b981" : "#0d1829",
+                color: paymentMethod === "ewallet" ? "#ffffff" : "#94a3b8",
+              }}
+            >
+              E-WALLET
+            </button>
           </div>
         </div>
 
@@ -339,6 +421,8 @@ function App() {
                   <div style={styles.historyDate}>
                     {new Date(item.created_at).toLocaleString()}
                   </div>
+
+                  <div style={styles.historyMethod}>{item.payment_method}</div>
                 </div>
 
                 <div style={styles.historyConfidence}>{item.confidence}%</div>
@@ -666,6 +750,37 @@ const styles = {
     fontSize: 10,
   },
 
+  paymentPanel: {
+    background: "#0d1829",
+    border: "1px solid #1e2d45",
+    borderRadius: 16,
+    padding: 14,
+  },
+
+  paymentTitle: {
+    fontSize: 10,
+    color: "#64748b",
+    letterSpacing: "0.18em",
+    marginBottom: 12,
+    fontWeight: 700,
+  },
+
+  paymentButtons: {
+    display: "flex",
+    gap: 10,
+  },
+
+  payBtn: {
+    flex: 1,
+    padding: "12px 0",
+    borderRadius: 10,
+    border: "1px solid #1e293b",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 11,
+    transition: "all 0.3s",
+  },
+
   historyPanel: {
     background: "#0d1829",
     border: "1px solid #1e2d45",
@@ -706,6 +821,13 @@ const styles = {
     fontSize: 10,
     color: "#475569",
     marginTop: 3,
+  },
+
+  historyMethod: {
+    fontSize: 10,
+    color: "#c9a84c",
+    marginTop: 2,
+    textTransform: "uppercase",
   },
 
   historyConfidence: {

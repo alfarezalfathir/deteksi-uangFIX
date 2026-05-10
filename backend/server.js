@@ -34,15 +34,34 @@ app.post("/detect", async (req, res) => {
   console.log("Frame masuk ke Express");
 
   try {
-    const response = await axios.post("http://127.0.0.1:8000/detect", {
-      image: req.body.image,
-    });
-    const result = response.data.result;
-    const confidence = response.data.confidence;
+    let result = "SUCCESS";
+    let confidence = 100;
+
+    // CASH DETECTION
+    if (req.body.payment_method === "cash") {
+      const response = await axios.post("http://127.0.0.1:8000/detect", {
+        image: req.body.image,
+      });
+
+      result = response.data.result;
+      confidence = response.data.confidence;
+    }
+
+    const payment_method = req.body.payment_method || "cash";
+    const amount = req.body.amount || 50000;
+
+    const status =
+      confidence >= 85 ? "SUCCESS" : confidence >= 60 ? "WARNING" : "FAILED";
+
+    const contract_code = "INV-" + Date.now();
 
     db.query(
-      "INSERT INTO transactions (result, confidence) VALUES (?, ?)",
-      [result, confidence],
+      `
+      INSERT INTO transactions
+      (result, confidence, payment_method, amount, status, contract_code)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [result, confidence, payment_method, amount, status, contract_code],
       (err, data) => {
         if (err) {
           console.log(err);
@@ -50,7 +69,12 @@ app.post("/detect", async (req, res) => {
       },
     );
 
-    res.json(response.data);
+    res.json({
+      result,
+      confidence,
+      color:
+        confidence >= 85 ? "#10b981" : confidence >= 60 ? "#f59e0b" : "#ef4444",
+    });
   } catch (error) {
     console.log(error);
 
