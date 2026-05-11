@@ -42,9 +42,14 @@ app.post("/detect", async (req, res) => {
       const response = await axios.post("http://127.0.0.1:8000/detect", {
         image: req.body.image,
       });
-
       result = response.data.result;
       confidence = response.data.confidence;
+    } else if (req.body.payment_method === "debit") {
+      result = "DEBIT SUCCESS";
+      confidence = 100;
+    } else if (req.body.payment_method === "ewallet") {
+      result = "E-WALLET SUCCESS";
+      confidence = 100;
     }
 
     const payment_method = req.body.payment_method || "cash";

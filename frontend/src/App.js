@@ -39,7 +39,6 @@ function App() {
     }
   };
 
-  // START CAMERA
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -50,20 +49,16 @@ function App() {
         },
         audio: false,
       });
-
       videoRef.current.srcObject = stream;
     } catch (error) {
       console.log(error);
     }
   };
 
-  // START SCAN
   const startScan = async () => {
     if (paymentMethod === "cash") {
       if (intervalRef.current) return;
-
       setIsScanning(true);
-
       intervalRef.current = setInterval(() => {
         captureFrame();
       }, 1800);
@@ -74,11 +69,9 @@ function App() {
           payment_method: "debit",
           amount: totalBelanja,
         });
-
         setResult("DEBIT SUCCESS");
-        setColor("#3b82f6");
+        setColor("#10b981");
         setConfidence(100);
-
         fetchTransactions();
       } catch (error) {
         console.log(error);
@@ -90,11 +83,9 @@ function App() {
           payment_method: "ewallet",
           amount: totalBelanja,
         });
-
         setResult("E-WALLET SUCCESS");
         setColor("#10b981");
         setConfidence(100);
-
         fetchTransactions();
       } catch (error) {
         console.log(error);
@@ -102,51 +93,38 @@ function App() {
     }
   };
 
-  // STOP SCAN
   const stopScan = () => {
     setIsScanning(false);
-
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
   };
 
-  // HITUNG KEMBALIAN
   const hitungKembalian = () => {
     const kembali = jumlahBayar - totalBelanja;
     setKembalian(kembali);
   };
 
-  // CAPTURE FRAME
   const captureFrame = async () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-
     if (!video || video.readyState !== 4) return;
-
     const context = canvas.getContext("2d");
-
     canvas.width = 640;
     canvas.height = 480;
-
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
     const image = canvas.toDataURL("image/jpeg", 0.9);
-
     try {
       const response = await axios.post("/detect", {
         image,
         payment_method: paymentMethod,
         amount: totalBelanja,
       });
-
       setResult(response.data.result);
       setColor(response.data.color);
       setConfidence(response.data.confidence);
-
       fetchTransactions();
-
       if (response.data.result === "ASLI" && response.data.confidence >= 90) {
         stopScan();
       }
@@ -166,329 +144,418 @@ function App() {
 
   const confidenceColor =
     confidence >= 85
-      ? "#10b981"
+      ? "#16a34a"
       : confidence >= 60
-        ? "#f59e0b"
+        ? "#d97706"
         : confidence > 0
-          ? "#ef4444"
-          : "#64748b";
+          ? "#dc2626"
+          : "#94a3b8";
+
+  const formatRupiah = (val) => {
+    if (!val && val !== 0) return "—";
+    return Number(val).toLocaleString("id-ID");
+  };
+
+  const payMethods = [
+    { id: "cash", label: "Tunai", icon: "💵", activeColor: "#1a56db" },
+    { id: "debit", label: "Debit", icon: "💳", activeColor: "#7c3aed" },
+    { id: "ewallet", label: "e-Wallet", icon: "📱", activeColor: "#0ea5e9" },
+  ];
 
   return (
-    <div style={styles.root}>
-      <div style={styles.gridOverlay} />
+    <div style={s.root}>
+      {/* Inject font */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: #f0f4ff; }
+        input::placeholder { color: #94a3b8; }
+        input:focus { outline: none; border-color: #1a56db !important; box-shadow: 0 0 0 3px rgba(26,86,219,0.12); }
+        @keyframes scan { 0%,100%{top:20%} 50%{top:75%} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(26,86,219,0.35)} 50%{box-shadow:0 0 0 8px rgba(26,86,219,0)} }
+      `}</style>
 
       {/* HEADER */}
-      <header style={styles.header}>
-        <div style={styles.logoArea}>
-          <div style={styles.logoIcon}>💵</div>
-
-          <div>
-            <div style={styles.logoName}>VaultScan</div>
-            <div style={styles.logoSub}>Banknote Authentication</div>
+      <header style={s.header}>
+        <div style={s.headerBg} />
+        <div style={s.headerContent}>
+          <div style={s.logoRow}>
+            <div style={s.logoCircle}>
+              <span style={{ fontSize: 22 }}>🏦</span>
+            </div>
+            <div>
+              <div style={s.appName}>VaultScan</div>
+              <div style={s.appSub}>Verifikasi Uang Tunai</div>
+            </div>
           </div>
-        </div>
-
-        <div style={styles.headerBadge}>
-          <span
+          <div
             style={{
-              ...styles.dot,
-              background: isScanning ? "#10b981" : "#64748b",
+              ...s.statusPill,
+              background: isScanning ? "#dcfce7" : "#f1f5f9",
+              color: isScanning ? "#16a34a" : "#64748b",
             }}
-          />
-
-          {isScanning ? "ACTIVE" : "STANDBY"}
+          >
+            <span
+              style={{
+                ...s.statusDot,
+                background: isScanning ? "#16a34a" : "#94a3b8",
+                animation: isScanning ? "pulse 1.4s infinite" : "none",
+              }}
+            />
+            {isScanning ? "Scanning..." : "Standby"}
+          </div>
         </div>
       </header>
 
-      <div style={styles.divider} />
+      <main style={s.main}>
+        {/* CAMERA CARD */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <div style={s.cardIcon}>📷</div>
+            <div>
+              <div style={s.cardTitle}>Kamera Live</div>
+              <div style={s.cardSub}>Arahkan uang ke dalam bingkai</div>
+            </div>
+          </div>
 
-      {/* MAIN */}
-      <main style={styles.main}>
-        {/* CAMERA */}
-        <div style={styles.cameraCard}>
-          <div style={styles.cameraLabel}>LIVE FEED</div>
+          <div style={s.cameraWrap}>
+            <video ref={videoRef} autoPlay playsInline muted style={s.video} />
 
-          <div style={styles.cameraViewport}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={styles.video}
-            />
-
-            {["tl", "tr", "bl", "br"].map((pos) => (
+            {/* corners */}
+            {[
+              { top: 10, left: 10, borderRight: "none", borderBottom: "none" },
+              { top: 10, right: 10, borderLeft: "none", borderBottom: "none" },
+              { bottom: 10, left: 10, borderRight: "none", borderTop: "none" },
+              { bottom: 10, right: 10, borderLeft: "none", borderTop: "none" },
+            ].map((pos, i) => (
               <div
-                key={pos}
+                key={i}
                 style={{
-                  ...styles.corner,
-                  ...styles[`corner_${pos}`],
-                  borderColor: isScanning ? "#c9a84c" : "#334155",
+                  ...s.corner,
+                  ...pos,
+                  borderColor: isScanning ? "#1a56db" : "#e2e8f0",
                 }}
               />
             ))}
 
             <div
               style={{
-                ...styles.guideBox,
-                borderColor: isScanning ? "#c9a84c" : "#475569",
+                ...s.guideFrame,
+                borderColor: isScanning ? "#1a56db" : "#cbd5e1",
               }}
             >
-              <div style={styles.guideLabel}>Align money inside box</div>
+              <div style={s.guideText}>Uang kertas di sini</div>
             </div>
 
             {isScanning && (
               <div
                 style={{
-                  ...styles.scanLine,
-                  top: pulse ? "25%" : "75%",
-                  transition: "top 0.9s ease-in-out",
+                  ...s.scanBeam,
+                  animation: "scan 1.8s ease-in-out infinite",
                 }}
               />
             )}
-          </div>
-        </div>
 
-        <div style={styles.paymentPanel}>
-          <div style={styles.paymentTitle}>POS TRANSACTION</div>
-
-          <input
-            type="number"
-            placeholder="Total Belanja"
-            value={totalBelanja}
-            onChange={(e) => setTotalBelanja(e.target.value)}
-            style={styles.input}
-          />
-
-          <input
-            type="number"
-            placeholder="Jumlah Bayar"
-            value={jumlahBayar}
-            onChange={(e) => setJumlahBayar(e.target.value)}
-            style={styles.input}
-          />
-
-          <button onClick={hitungKembalian} style={styles.calcBtn}>
-            HITUNG KEMBALIAN
-          </button>
-
-          <div style={styles.kembalianText}>Kembalian : Rp {kembalian}</div>
-        </div>
-
-        {/* PAYMENT METHOD */}
-        <div style={styles.paymentPanel}>
-          <div style={styles.paymentTitle}>PAYMENT METHOD</div>
-
-          <div style={styles.paymentButtons}>
-            <button
-              onClick={() => setPaymentMethod("cash")}
-              style={{
-                ...styles.payBtn,
-                background: paymentMethod === "cash" ? "#c9a84c" : "#0d1829",
-                color: paymentMethod === "cash" ? "#1a0f00" : "#94a3b8",
-              }}
-            >
-              CASH
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod("debit")}
-              style={{
-                ...styles.payBtn,
-                background: paymentMethod === "debit" ? "#3b82f6" : "#0d1829",
-                color: paymentMethod === "debit" ? "#ffffff" : "#94a3b8",
-              }}
-            >
-              DEBIT
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod("ewallet")}
-              style={{
-                ...styles.payBtn,
-                background: paymentMethod === "ewallet" ? "#10b981" : "#0d1829",
-                color: paymentMethod === "ewallet" ? "#ffffff" : "#94a3b8",
-              }}
-            >
-              E-WALLET
-            </button>
-          </div>
-        </div>
-
-        {/* BUTTON */}
-        <div style={styles.controls}>
-          <button
-            onClick={startScan}
-            disabled={isScanning}
-            style={{
-              ...styles.btn,
-              ...styles.btnStart,
-              opacity: isScanning ? 0.45 : 1,
-            }}
-          >
-            START SCAN
-          </button>
-
-          <button
-            onClick={stopScan}
-            disabled={!isScanning}
-            style={{
-              ...styles.btn,
-              ...styles.btnStop,
-              opacity: !isScanning ? 0.45 : 1,
-            }}
-          >
-            STOP
-          </button>
-        </div>
-
-        {/* RESULT */}
-        <div style={styles.resultPanel}>
-          <div style={styles.resultHeader}>
-            <span style={styles.resultHeaderLabel}>SCAN RESULT</span>
-
-            <span
-              style={{
-                ...styles.resultStatus,
-                background: isScanning
-                  ? "rgba(16,185,129,0.12)"
-                  : "rgba(100,116,139,0.12)",
-                color: isScanning ? "#10b981" : "#64748b",
-              }}
-            >
-              {isScanning ? "● SCANNING" : "○ IDLE"}
-            </span>
-          </div>
-
-          <div style={styles.resultDivider} />
-
-          <div style={styles.resultMain}>
-            <div
-              style={{
-                ...styles.resultValue,
-                color: result ? color : "#475569",
-              }}
-            >
-              {result || "—"}
-            </div>
-
-            {result && (
-              <div style={styles.resultSubtext}>Currency verification</div>
+            {/* overlay when scanning */}
+            {isScanning && (
+              <div style={s.scanOverlay}>
+                <div style={s.scanBadge}>● SCANNING</div>
+              </div>
             )}
           </div>
+        </div>
 
-          <div style={styles.resultDivider} />
+        {/* RESULT CARD */}
+        <div
+          style={{
+            ...s.card,
+            ...s.resultCard,
+            borderColor: result ? color + "44" : "#e2e8f0",
+          }}
+        >
+          <div style={s.resultTop}>
+            <div>
+              <div style={s.cardTitle}>Hasil Deteksi</div>
+              <div style={s.cardSub}>Verifikasi keaslian uang</div>
+            </div>
+            <div
+              style={{
+                ...s.resultBigBadge,
+                background: result ? color + "15" : "#f8fafc",
+                color: result ? color : "#94a3b8",
+                borderColor: result ? color + "33" : "#e2e8f0",
+              }}
+            >
+              {result || "Belum Scan"}
+            </div>
+          </div>
 
-          <div style={styles.metricsRow}>
-            <div style={styles.metric}>
-              <div style={styles.metricLabel}>CONFIDENCE</div>
+          <div style={s.divider} />
 
-              <div style={styles.metricBar}>
+          <div style={s.metricsRow}>
+            <div style={s.metricBox}>
+              <div style={s.metricTitle}>Confidence</div>
+              <div style={s.metricBigVal}>
+                {confidence > 0 ? `${confidence}%` : "—"}
+              </div>
+              <div style={s.barTrack}>
                 <div
                   style={{
-                    ...styles.metricFill,
+                    ...s.barFill,
                     width: `${confidence}%`,
                     background: confidenceColor,
                   }}
                 />
               </div>
-
-              <div
-                style={{
-                  ...styles.metricValue,
-                  color: confidenceColor,
-                }}
-              >
-                {confidence > 0 ? `${confidence}%` : "—"}
-              </div>
             </div>
-
-            <div style={styles.metricSep} />
-
-            <div style={styles.metric}>
-              <div style={styles.metricLabel}>CERTAINTY</div>
-
+            <div style={s.metricDivider} />
+            <div style={s.metricBox}>
+              <div style={s.metricTitle}>Tingkat Keyakinan</div>
               <div
                 style={{
-                  ...styles.certBadge,
-                  background: `${confidenceColor}18`,
+                  ...s.certChip,
+                  background: confidenceColor + "18",
                   color: confidenceColor,
                 }}
               >
                 {confidenceLevel}
               </div>
-            </div>
-
-            <div style={styles.metricSep} />
-
-            <div style={styles.metric}>
-              <div style={styles.metricLabel}>STATUS</div>
-
-              <div style={styles.metricValue}>
-                {isScanning ? "ACTIVE" : "IDLE"}
+              <div style={s.metricSub}>
+                {isScanning ? "Sedang proses..." : "Menunggu scan"}
               </div>
             </div>
           </div>
         </div>
 
+        {/* TRANSACTION FORM */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <div style={s.cardIcon}>🧾</div>
+            <div>
+              <div style={s.cardTitle}>Detail Transaksi</div>
+              <div style={s.cardSub}>Masukkan nominal pembayaran</div>
+            </div>
+          </div>
+
+          <div style={s.inputGroup}>
+            <label style={s.label}>Total Belanja</label>
+            <div style={s.inputWrap}>
+              <span style={s.prefix}>Rp</span>
+              <input
+                type="number"
+                placeholder="0"
+                value={totalBelanja}
+                onChange={(e) => setTotalBelanja(e.target.value)}
+                style={s.input}
+              />
+            </div>
+          </div>
+
+          <div style={s.inputGroup}>
+            <label style={s.label}>Jumlah Bayar</label>
+            <div style={s.inputWrap}>
+              <span style={s.prefix}>Rp</span>
+              <input
+                type="number"
+                placeholder="0"
+                value={jumlahBayar}
+                onChange={(e) => setJumlahBayar(e.target.value)}
+                style={s.input}
+              />
+            </div>
+          </div>
+
+          <button onClick={hitungKembalian} style={s.calcBtn}>
+            Hitung Kembalian
+          </button>
+
+          {kembalian !== 0 && (
+            <div
+              style={{
+                ...s.kembalianBox,
+                background: kembalian >= 0 ? "#f0fdf4" : "#fef2f2",
+                borderColor: kembalian >= 0 ? "#bbf7d0" : "#fecaca",
+              }}
+            >
+              <div
+                style={{
+                  ...s.kembalianLabel,
+                  color: kembalian >= 0 ? "#16a34a" : "#dc2626",
+                }}
+              >
+                {kembalian >= 0 ? "💰 Kembalian" : "⚠️ Kurang Bayar"}
+              </div>
+              <div
+                style={{
+                  ...s.kembalianVal,
+                  color: kembalian >= 0 ? "#15803d" : "#b91c1c",
+                }}
+              >
+                Rp {formatRupiah(Math.abs(kembalian))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* PAYMENT METHOD */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <div style={s.cardIcon}>💳</div>
+            <div>
+              <div style={s.cardTitle}>Metode Pembayaran</div>
+              <div style={s.cardSub}>Pilih cara bayar</div>
+            </div>
+          </div>
+
+          <div style={s.payRow}>
+            {payMethods.map((m) => {
+              const active = paymentMethod === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setPaymentMethod(m.id)}
+                  style={{
+                    ...s.payBtn,
+                    background: active ? m.activeColor : "#f8fafc",
+                    color: active ? "#fff" : "#475569",
+                    border: active
+                      ? `2px solid ${m.activeColor}`
+                      : "2px solid #e2e8f0",
+                    boxShadow: active
+                      ? `0 4px 14px ${m.activeColor}44`
+                      : "none",
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{m.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700 }}>
+                    {m.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SCAN BUTTONS */}
+        <div style={s.actionRow}>
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            style={{
+              ...s.actionBtn,
+              ...s.startBtn,
+              opacity: isScanning ? 0.5 : 1,
+              cursor: isScanning ? "not-allowed" : "pointer",
+            }}
+          >
+            <span style={{ fontSize: 18 }}>🔍</span>
+            Mulai Scan
+          </button>
+          <button
+            onClick={stopScan}
+            disabled={!isScanning}
+            style={{
+              ...s.actionBtn,
+              ...s.stopBtn,
+              opacity: !isScanning ? 0.4 : 1,
+              cursor: !isScanning ? "not-allowed" : "pointer",
+            }}
+          >
+            <span style={{ fontSize: 18 }}>⏹</span>
+            Stop
+          </button>
+        </div>
+
         {/* HISTORY */}
-        <div style={styles.historyPanel}>
-          <div style={styles.historyHeader}>RECENT TRANSACTIONS</div>
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <div style={s.cardIcon}>📋</div>
+            <div>
+              <div style={s.cardTitle}>Riwayat Transaksi</div>
+              <div style={s.cardSub}>5 transaksi terakhir</div>
+            </div>
+          </div>
 
           {transactions.length === 0 ? (
-            <div style={styles.emptyHistory}>No transactions yet</div>
-          ) : (
-            transactions.slice(0, 5).map((item) => (
-              <div key={item.id} style={styles.historyItem}>
-                <div>
-                  <div
-                    style={{
-                      ...styles.historyResult,
-                      color:
-                        item.result === "ASLI"
-                          ? "#10b981"
-                          : item.result === "MERAGUKAN"
-                            ? "#f59e0b"
-                            : "#ef4444",
-                    }}
-                  >
-                    {item.result}
-                  </div>
-
-                  <div style={styles.historyMethod}>{item.payment_method}</div>
-
-                  <div style={styles.historyDate}>Amount: Rp {item.amount}</div>
-
-                  <div style={styles.historyDate}>
-                    Contract: {item.contract_code}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: "right" }}>
-                  <div style={styles.historyConfidence}>{item.confidence}%</div>
-
-                  <div
-                    style={{
-                      fontSize: 10,
-                      marginTop: 4,
-                      color:
-                        item.status === "SUCCESS"
-                          ? "#10b981"
-                          : item.status === "WARNING"
-                            ? "#f59e0b"
-                            : "#ef4444",
-                    }}
-                  >
-                    {item.status}
-                  </div>
-                </div>
+            <div style={s.emptyState}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>
+                Belum ada transaksi
               </div>
-            ))
+            </div>
+          ) : (
+            <div style={s.historyList}>
+              {transactions.slice(0, 5).map((item, i) => {
+                const isSuccess =
+                  item.result === "ASLI" ||
+                  item.result === "DEBIT SUCCESS" ||
+                  item.result === "E-WALLET SUCCESS";
+                const rColor =
+                  isSuccess
+                    ? "#16a34a"
+                    : item.result === "MERAGUKAN"
+                      ? "#d97706"
+                      : "#dc2626";
+                const rBg =
+                  isSuccess
+                    ? "#f0fdf4"
+                    : item.result === "MERAGUKAN"
+                      ? "#fffbeb"
+                      : "#fef2f2";
+                return (
+                  <div
+                    key={item.id}
+                    style={{ ...s.histItem, animationDelay: `${i * 60}ms` }}
+                  >
+                    <div
+                      style={{ ...s.histBadge, background: rBg, color: rColor }}
+                    >
+                      {isSuccess
+                        ? "✅"
+                        : item.result === "MERAGUKAN"
+                          ? "⚠️"
+                          : "❌"}
+                    </div>
+                    <div style={s.histInfo}>
+                      <div style={{ ...s.histResult, color: rColor }}>
+                        {item.result}
+                      </div>
+                      <div style={s.histMeta}>
+                        {item.payment_method?.toUpperCase()} · Rp{" "}
+                        {formatRupiah(item.amount)}
+                      </div>
+                      <div style={s.histCode}>{item.contract_code}</div>
+                    </div>
+                    <div style={s.histRight}>
+                      <div style={{ ...s.histConf, color: rColor }}>
+                        {item.confidence}%
+                      </div>
+                      <div
+                        style={{
+                          ...s.histStatus,
+                          color:
+                            item.status === "SUCCESS"
+                              ? "#16a34a"
+                              : item.status === "WARNING"
+                                ? "#d97706"
+                                : "#dc2626",
+                        }}
+                      >
+                        {item.status}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
         {/* FOOTER */}
-        <div style={styles.footer}>For verification purposes only</div>
+        <div style={s.footer}>
+          🔒 Digunakan hanya untuk keperluan verifikasi internal
+        </div>
       </main>
 
       <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -496,437 +563,389 @@ function App() {
   );
 }
 
-const styles = {
+const s = {
   root: {
     minHeight: "100vh",
-    background: "#080e1a",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    fontFamily: "'DM Sans', sans-serif",
+    background: "#f0f4ff",
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    maxWidth: 430,
+    margin: "0 auto",
+    paddingBottom: 32,
+  },
+
+  // HEADER
+  header: {
     position: "relative",
     overflow: "hidden",
+    borderRadius: "0 0 28px 28px",
+    marginBottom: 20,
   },
-
-  gridOverlay: {
+  headerBg: {
     position: "absolute",
     inset: 0,
-    backgroundImage: `
-      linear-gradient(rgba(201,168,76,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(201,168,76,0.03) 1px, transparent 1px)
-    `,
-    backgroundSize: "40px 40px",
+    background:
+      "linear-gradient(135deg, #1a56db 0%, #1e3a8a 60%, #312e81 100%)",
   },
-
-  header: {
-    width: "100%",
-    maxWidth: 420,
+  headerContent: {
+    position: "relative",
+    zIndex: 1,
+    padding: "48px 20px 28px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "22px 20px 16px",
-    zIndex: 1,
   },
-
-  logoArea: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-  },
-
-  logoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    background: "linear-gradient(135deg,#c9a84c,#e8cc7e)",
+  logoRow: { display: "flex", alignItems: "center", gap: 12 },
+  logoCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    background: "rgba(255,255,255,0.18)",
+    backdropFilter: "blur(8px)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#1a0f00",
-    fontSize: 20,
+    border: "1px solid rgba(255,255,255,0.25)",
   },
-
-  logoName: {
+  appName: {
     color: "#fff",
-    fontWeight: 700,
-    fontSize: 15,
+    fontWeight: 800,
+    fontSize: 18,
+    letterSpacing: "-0.02em",
   },
-
-  logoSub: {
-    color: "#64748b",
-    fontSize: 10,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-  },
-
-  headerBadge: {
-    fontSize: 10,
-    color: "#94a3b8",
-    border: "1px solid #1e293b",
-    borderRadius: 20,
-    padding: "4px 10px",
+  appSub: { color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 2 },
+  statusPill: {
     display: "flex",
     alignItems: "center",
-    gap: 5,
+    gap: 6,
+    padding: "6px 12px",
+    borderRadius: 20,
+    fontSize: 11,
+    fontWeight: 700,
   },
-
-  dot: {
-    width: 6,
-    height: 6,
+  statusDot: {
+    width: 7,
+    height: 7,
     borderRadius: "50%",
+    display: "inline-block",
   },
 
-  divider: {
-    width: "calc(100% - 40px)",
-    maxWidth: 420,
-    height: 1,
-    background:
-      "linear-gradient(90deg,transparent,#1e293b,#c9a84c33,#1e293b,transparent)",
-  },
-
+  // MAIN
   main: {
-    width: "100%",
-    maxWidth: 420,
-    padding: 20,
+    padding: "0 16px",
     display: "flex",
     flexDirection: "column",
-    gap: 16,
-    zIndex: 1,
+    gap: 14,
   },
 
-  cameraCard: {
-    background: "#0d1829",
-    border: "1px solid #1e2d45",
-    borderRadius: 16,
-    overflow: "hidden",
+  // CARDS
+  card: {
+    background: "#fff",
+    borderRadius: 20,
+    padding: 18,
+    boxShadow: "0 2px 16px rgba(26,86,219,0.07)",
+    border: "1.5px solid #e8eef8",
+    animation: "fadeIn 0.3s ease both",
   },
-
-  cameraLabel: {
-    fontSize: 9,
-    color: "#64748b",
-    padding: "10px 14px",
-    letterSpacing: "0.18em",
+  cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
   },
+  cardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    background: "#eff3ff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 20,
+    flexShrink: 0,
+  },
+  cardTitle: { fontWeight: 700, fontSize: 14, color: "#1e293b" },
+  cardSub: { fontSize: 11, color: "#94a3b8", marginTop: 1 },
 
-  cameraViewport: {
+  // CAMERA
+  cameraWrap: {
     position: "relative",
     aspectRatio: "4/3",
-    background: "#000",
+    borderRadius: 14,
     overflow: "hidden",
+    background: "#0f172a",
   },
-
-  video: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
+  video: { width: "100%", height: "100%", objectFit: "cover" },
+  corner: {
+    position: "absolute",
+    width: 18,
+    height: 18,
+    borderWidth: 2.5,
+    borderStyle: "solid",
+    borderRadius: 2,
   },
-
-  guideBox: {
+  guideFrame: {
     position: "absolute",
     top: "50%",
     left: "50%",
     transform: "translate(-50%, -50%)",
-    width: "60%",
-    height: "42%",
+    width: "62%",
+    height: "44%",
     border: "1.5px dashed",
-    borderRadius: 8,
+    borderRadius: 10,
     display: "flex",
     justifyContent: "center",
     alignItems: "flex-end",
     paddingBottom: 6,
   },
-
-  guideLabel: {
+  guideText: {
     fontSize: 9,
-    color: "#c9a84c",
-    letterSpacing: "0.08em",
+    color: "#93c5fd",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    background: "rgba(0,0,0,0.4)",
+    padding: "2px 8px",
+    borderRadius: 99,
   },
-
-  scanLine: {
+  scanBeam: {
     position: "absolute",
     left: 0,
     right: 0,
     height: 2,
     background:
-      "linear-gradient(90deg,transparent,#c9a84c,#fff,#c9a84c,transparent)",
+      "linear-gradient(90deg, transparent, #3b82f6, #fff, #3b82f6, transparent)",
+    boxShadow: "0 0 12px #3b82f6",
   },
-
-  corner: {
+  scanOverlay: {
     position: "absolute",
-    width: 16,
-    height: 16,
-    borderWidth: 2,
-    borderStyle: "solid",
+    top: 10,
+    right: 10,
   },
-
-  corner_tl: {
-    top: 12,
-    left: 12,
-    borderRight: "none",
-    borderBottom: "none",
-  },
-
-  corner_tr: {
-    top: 12,
-    right: 12,
-    borderLeft: "none",
-    borderBottom: "none",
-  },
-
-  corner_bl: {
-    bottom: 12,
-    left: 12,
-    borderRight: "none",
-    borderTop: "none",
-  },
-
-  corner_br: {
-    bottom: 12,
-    right: 12,
-    borderLeft: "none",
-    borderTop: "none",
-  },
-
-  controls: {
-    display: "flex",
-    gap: 10,
-  },
-
-  btn: {
-    flex: 1,
-    border: "none",
-    borderRadius: 10,
-    padding: "12px 0",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-
-  btnStart: {
-    background: "linear-gradient(135deg,#b8902e,#e8cc7e,#b8902e)",
-    color: "#1a0f00",
-  },
-
-  btnStop: {
-    background: "#0d1829",
-    border: "1px solid #1e293b",
-    color: "#94a3b8",
-  },
-
-  resultPanel: {
-    background: "#0d1829",
-    border: "1px solid #1e2d45",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-
-  resultHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "12px 14px",
-  },
-
-  resultHeaderLabel: {
-    fontSize: 10,
-    color: "#64748b",
-    letterSpacing: "0.15em",
-  },
-
-  resultStatus: {
-    padding: "3px 8px",
-    borderRadius: 20,
+  scanBadge: {
+    background: "rgba(26,86,219,0.85)",
+    color: "#fff",
     fontSize: 9,
     fontWeight: 700,
-  },
-
-  resultDivider: {
-    height: 1,
-    background: "#111d2e",
-  },
-
-  resultMain: {
-    padding: 20,
-    textAlign: "center",
-  },
-
-  resultValue: {
-    fontSize: 28,
-    fontWeight: 700,
-  },
-
-  resultSubtext: {
-    color: "#64748b",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  metricsRow: {
-    display: "flex",
-    alignItems: "center",
-    padding: 14,
-  },
-
-  metric: {
-    flex: 1,
-    textAlign: "center",
-  },
-
-  metricLabel: {
-    fontSize: 8,
-    color: "#475569",
-    marginBottom: 6,
-  },
-
-  metricBar: {
-    height: 3,
-    background: "#1e293b",
-    borderRadius: 2,
-    overflow: "hidden",
-    marginBottom: 6,
-  },
-
-  metricFill: {
-    height: "100%",
-  },
-
-  metricValue: {
-    color: "#fff",
-    fontWeight: 700,
-  },
-
-  metricSep: {
-    width: 1,
-    height: 28,
-    background: "#1e293b",
-    margin: "0 10px",
-  },
-
-  certBadge: {
     padding: "4px 8px",
-    borderRadius: 4,
-    fontWeight: 700,
-    fontSize: 10,
+    borderRadius: 99,
+    letterSpacing: "0.08em",
+    backdropFilter: "blur(4px)",
   },
 
-  paymentPanel: {
-    background: "#0d1829",
-    border: "1px solid #1e2d45",
-    borderRadius: 16,
-    padding: 14,
-  },
-
-  paymentTitle: {
-    fontSize: 10,
-    color: "#64748b",
-    letterSpacing: "0.18em",
-    marginBottom: 12,
-    fontWeight: 700,
-  },
-
-  paymentButtons: {
-    display: "flex",
-    gap: 10,
-  },
-
-  payBtn: {
-    flex: 1,
-    padding: "12px 0",
-    borderRadius: 10,
-    border: "1px solid #1e293b",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 11,
-    transition: "all 0.3s",
-  },
-
-  historyPanel: {
-    background: "#0d1829",
-    border: "1px solid #1e2d45",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-
-  historyHeader: {
-    padding: "12px 14px",
-    fontSize: 10,
-    letterSpacing: "0.18em",
-    color: "#64748b",
-    fontWeight: 700,
-    borderBottom: "1px solid #111d2e",
-  },
-
-  emptyHistory: {
-    padding: 20,
-    textAlign: "center",
-    color: "#475569",
-    fontSize: 12,
-  },
-
-  historyItem: {
+  // RESULT
+  resultCard: { transition: "border-color 0.4s" },
+  resultTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "12px 14px",
-    borderBottom: "1px solid #111d2e",
+    gap: 10,
+    marginBottom: 14,
   },
+  resultBigBadge: {
+    padding: "8px 14px",
+    borderRadius: 12,
+    fontWeight: 800,
+    fontSize: 14,
+    border: "1.5px solid",
+    letterSpacing: "0.04em",
+    flexShrink: 0,
+  },
+  divider: { height: 1, background: "#f1f5f9", marginBottom: 14 },
+  metricsRow: { display: "flex", gap: 0, alignItems: "center" },
+  metricBox: { flex: 1 },
+  metricDivider: {
+    width: 1,
+    height: 50,
+    background: "#f1f5f9",
+    margin: "0 16px",
+  },
+  metricTitle: {
+    fontSize: 10,
+    color: "#94a3b8",
+    fontWeight: 600,
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  metricBigVal: {
+    fontWeight: 800,
+    fontSize: 24,
+    color: "#1e293b",
+    lineHeight: 1,
+    marginBottom: 8,
+  },
+  barTrack: {
+    height: 4,
+    background: "#f1f5f9",
+    borderRadius: 99,
+    overflow: "hidden",
+  },
+  barFill: {
+    height: "100%",
+    borderRadius: 99,
+    transition: "width 0.6s ease, background 0.4s",
+  },
+  certChip: {
+    display: "inline-block",
+    padding: "4px 12px",
+    borderRadius: 99,
+    fontWeight: 800,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  metricSub: { fontSize: 10, color: "#94a3b8" },
 
-  historyResult: {
+  // FORM
+  inputGroup: { marginBottom: 12 },
+  label: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#64748b",
+    display: "block",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
+  inputWrap: {
+    display: "flex",
+    alignItems: "center",
+    border: "1.5px solid #e2e8f0",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#f8fafc",
+    transition: "border 0.2s",
+  },
+  prefix: {
+    padding: "12px 10px 12px 14px",
     fontSize: 13,
     fontWeight: 700,
+    color: "#1a56db",
+    background: "#eff3ff",
+    borderRight: "1.5px solid #e2e8f0",
   },
-
-  historyDate: {
-    fontSize: 10,
-    color: "#475569",
-    marginTop: 3,
-  },
-
-  historyMethod: {
-    fontSize: 10,
-    color: "#c9a84c",
-    marginTop: 2,
-    textTransform: "uppercase",
-  },
-
-  historyConfidence: {
-    fontSize: 14,
+  input: {
+    flex: 1,
+    border: "none",
+    background: "transparent",
+    padding: "12px 14px",
+    fontSize: 15,
     fontWeight: 700,
-    color: "#e2e8f0",
+    color: "#1e293b",
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    width: "100%",
+  },
+  calcBtn: {
+    width: "100%",
+    padding: "13px",
+    border: "none",
+    borderRadius: 12,
+    background: "linear-gradient(135deg, #1a56db, #2563eb)",
+    color: "#fff",
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: "pointer",
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    letterSpacing: "0.02em",
+    boxShadow: "0 4px 14px rgba(26,86,219,0.35)",
+  },
+  kembalianBox: {
+    marginTop: 14,
+    padding: "14px 16px",
+    borderRadius: 14,
+    border: "1.5px solid",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  kembalianLabel: { fontSize: 12, fontWeight: 700 },
+  kembalianVal: { fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em" },
+
+  // PAYMENT METHOD
+  payRow: { display: "flex", gap: 10 },
+  payBtn: {
+    flex: 1,
+    padding: "12px 8px",
+    borderRadius: 14,
+    cursor: "pointer",
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 5,
+    transition: "all 0.25s ease",
+  },
+
+  // ACTION BUTTONS
+  actionRow: { display: "flex", gap: 10 },
+  actionBtn: {
+    flex: 1,
+    padding: "14px",
+    borderRadius: 14,
+    border: "none",
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    fontWeight: 700,
+    fontSize: 13,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    transition: "all 0.2s",
+  },
+  startBtn: {
+    background: "linear-gradient(135deg, #1a56db, #2563eb)",
+    color: "#fff",
+    boxShadow: "0 4px 18px rgba(26,86,219,0.4)",
+  },
+  stopBtn: {
+    background: "#fff",
+    color: "#64748b",
+    border: "1.5px solid #e2e8f0",
+  },
+
+  // HISTORY
+  historyList: { display: "flex", flexDirection: "column", gap: 10 },
+  histItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px 14px",
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #f1f5f9",
+    animation: "fadeIn 0.35s ease both",
+  },
+  histBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 18,
+    flexShrink: 0,
+  },
+  histInfo: { flex: 1 },
+  histResult: { fontWeight: 800, fontSize: 13 },
+  histMeta: { fontSize: 10, color: "#94a3b8", marginTop: 2 },
+  histCode: {
+    fontSize: 10,
+    color: "#cbd5e1",
+    marginTop: 1,
+    fontFamily: "monospace",
+  },
+  histRight: { textAlign: "right" },
+  histConf: { fontWeight: 800, fontSize: 15 },
+  histStatus: { fontSize: 10, fontWeight: 700, marginTop: 2 },
+
+  emptyState: {
+    textAlign: "center",
+    padding: "28px 0 12px",
   },
 
   footer: {
-    fontSize: 10,
-    color: "#334155",
     textAlign: "center",
-    paddingTop: 4,
-  },
-
-  input: {
-    width: "100%",
-    padding: 12,
-    marginBottom: 10,
-    borderRadius: 8,
-    border: "1px solid #1e293b",
-    background: "#08111f",
-    color: "#fff",
-    boxSizing: "border-box",
-  },
-
-  calcBtn: {
-    width: "100%",
-    padding: 12,
-    border: "none",
-    borderRadius: 8,
-    background: "#10b981",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-
-  kembalianText: {
-    marginTop: 10,
-    color: "#10b981",
-    fontWeight: 700,
-    textAlign: "center",
+    color: "#94a3b8",
+    fontSize: 11,
+    padding: "8px 0 4px",
   },
 };
 
