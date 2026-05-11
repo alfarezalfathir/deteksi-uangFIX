@@ -15,7 +15,7 @@ def detect():
     try:
 
         print("Frame masuk ke Python")
-
+        
         # VALIDASI REQUEST
         data = request.get_json()
 
