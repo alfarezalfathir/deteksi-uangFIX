@@ -11,6 +11,9 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [totalBelanja, setTotalBelanja] = useState("");
+  const [jumlahBayar, setJumlahBayar] = useState("");
+  const [kembalian, setKembalian] = useState(0);
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -69,6 +72,7 @@ function App() {
         await axios.post("/detect", {
           image: null,
           payment_method: "debit",
+          amount: totalBelanja,
         });
 
         setResult("DEBIT SUCCESS");
@@ -84,6 +88,7 @@ function App() {
         await axios.post("/detect", {
           image: null,
           payment_method: "ewallet",
+          amount: totalBelanja,
         });
 
         setResult("E-WALLET SUCCESS");
@@ -107,6 +112,12 @@ function App() {
     }
   };
 
+  // HITUNG KEMBALIAN
+  const hitungKembalian = () => {
+    const kembali = jumlahBayar - totalBelanja;
+    setKembalian(kembali);
+  };
+
   // CAPTURE FRAME
   const captureFrame = async () => {
     const canvas = canvasRef.current;
@@ -127,6 +138,7 @@ function App() {
       const response = await axios.post("/detect", {
         image,
         payment_method: paymentMethod,
+        amount: totalBelanja,
       });
 
       setResult(response.data.result);
@@ -235,6 +247,32 @@ function App() {
               />
             )}
           </div>
+        </div>
+
+        <div style={styles.paymentPanel}>
+          <div style={styles.paymentTitle}>POS TRANSACTION</div>
+
+          <input
+            type="number"
+            placeholder="Total Belanja"
+            value={totalBelanja}
+            onChange={(e) => setTotalBelanja(e.target.value)}
+            style={styles.input}
+          />
+
+          <input
+            type="number"
+            placeholder="Jumlah Bayar"
+            value={jumlahBayar}
+            onChange={(e) => setJumlahBayar(e.target.value)}
+            style={styles.input}
+          />
+
+          <button onClick={hitungKembalian} style={styles.calcBtn}>
+            HITUNG KEMBALIAN
+          </button>
+
+          <div style={styles.kembalianText}>Kembalian : Rp {kembalian}</div>
         </div>
 
         {/* PAYMENT METHOD */}
@@ -860,6 +898,35 @@ const styles = {
     color: "#334155",
     textAlign: "center",
     paddingTop: 4,
+  },
+
+  input: {
+    width: "100%",
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: 8,
+    border: "1px solid #1e293b",
+    background: "#08111f",
+    color: "#fff",
+    boxSizing: "border-box",
+  },
+
+  calcBtn: {
+    width: "100%",
+    padding: 12,
+    border: "none",
+    borderRadius: 8,
+    background: "#10b981",
+    color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  kembalianText: {
+    marginTop: 10,
+    color: "#10b981",
+    fontWeight: 700,
+    textAlign: "center",
   },
 };
 
