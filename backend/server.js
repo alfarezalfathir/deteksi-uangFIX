@@ -1,25 +1,17 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const mysql = require("mysql2");
+const axios = require("axios");
+require("dotenv").config();
+
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
-const axios = require("axios");
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "money_detector",
-});
-
-db.connect((err) => {
-  if (err) {
-    console.log(err);
-  } else {
-    console.log("MySQL Connected");
-  }
-});
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+);
 
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -37,42 +29,47 @@ app.post("/detect", async (req, res) => {
     let result = "SUCCESS";
     let confidence = 100;
 
-    // CASH DETECTION
-    if (req.body.payment_method === "cash") {
+    const payment_method = req.body.payment_method || "cash";
+    const amount = req.body.amount || 50000;
+
+    if (payment_method === "cash") {
       const response = await axios.post("http://127.0.0.1:8000/detect", {
         image: req.body.image,
       });
+
       result = response.data.result;
       confidence = response.data.confidence;
-    } else if (req.body.payment_method === "debit") {
+    } else if (payment_method === "debit") {
       result = "DEBIT SUCCESS";
       confidence = 100;
-    } else if (req.body.payment_method === "ewallet") {
+    } else if (payment_method === "ewallet") {
       result = "E-WALLET SUCCESS";
       confidence = 100;
     }
-
-    const payment_method = req.body.payment_method || "cash";
-    const amount = req.body.amount || 50000;
 
     const status =
       confidence >= 85 ? "SUCCESS" : confidence >= 60 ? "WARNING" : "FAILED";
 
     const contract_code = "INV-" + Date.now();
 
-    db.query(
-      `
-      INSERT INTO transactions
-      (result, confidence, payment_method, amount, status, contract_code)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [result, confidence, payment_method, amount, status, contract_code],
-      (err, data) => {
-        if (err) {
-          console.log(err);
-        }
+    const { error } = await supabase.from("transactions").insert([
+      {
+        result,
+        confidence,
+        payment_method,
+        amount,
+        status,
+        contract_code,
       },
-    );
+    ]);
+
+    if (error) {
+      console.log("Supabase insert error:", error);
+
+      return res.status(500).json({
+        error: "Gagal menyimpan transaksi ke Supabase",
+      });
+    }
 
     res.json({
       result,
@@ -89,18 +86,35 @@ app.post("/detect", async (req, res) => {
   }
 });
 
-app.get("/transactions", (req, res) => {
-  db.query("SELECT * FROM transactions ORDER BY id DESC", (err, result) => {
-    if (err) {
-      console.log(err);
+/*
+========================
+API TRANSACTIONS
+========================
+*/
 
-      res.status(500).json({
-        error: "Database error",
+app.get("/transactions", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("id", { ascending: false });
+
+    if (error) {
+      console.log("Supabase select error:", error);
+
+      return res.status(500).json({
+        error: "Gagal mengambil data transaksi",
       });
-    } else {
-      res.json(result);
     }
-  });
+
+    res.json(data);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Server error",
+    });
+  }
 });
 
 /*
@@ -121,6 +135,8 @@ SERVER
 ========================
 */
 
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
