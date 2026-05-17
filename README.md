@@ -1,6 +1,6 @@
 # 💵 VaultScan — Sistem Deteksi Uang & Pembayaran
 
-VaultScan adalah aplikasi web berbasis **AI Computer Vision** untuk memverifikasi keaslian uang kertas secara real-time menggunakan kamera, sekaligus mendukung pembayaran digital (Debit & e-Wallet). Cocok digunakan sebagai sistem kasir sederhana dengan pencatatan transaksi otomatis ke database.
+VaultScan adalah aplikasi web berbasis **AI Computer Vision** untuk memverifikasi keaslian uang kertas secara real-time menggunakan kamera, sekaligus mendukung pembayaran digital (Debit & e-Wallet). Cocok digunakan sebagai sistem kasir sederhana dengan pencatatan transaksi otomatis ke **Supabase** (cloud database).
 
 ---
 
@@ -13,7 +13,7 @@ Backend Express (Node.js) — port 5000
     ↓  kirim frame gambar
 Python Flask (OpenCV) — port 8000
     ↓  analisis piksel & kembalikan hasil
-Backend  →  simpan ke MySQL  →  kirim response ke frontend
+Backend  →  simpan ke Supabase (cloud)  →  kirim response ke frontend
 ```
 
 ---
@@ -22,15 +22,19 @@ Backend  →  simpan ke MySQL  →  kirim response ke frontend
 
 ```
 deteksi-uangAI/
-├── frontend/          # React app (UI kamera + dashboard)
-│   └── src/App.js     # Komponen utama
-├── backend/           # Express.js server + static build
-│   ├── server.js      # REST API & MySQL
-│   └── build/         # React production build (di-copy dari frontend/build)
+├── frontend/              # React app (UI kamera + dashboard)
+│   ├── public/            # HTML, manifest, logo
+│   └── src/App.js         # Komponen utama
+├── backend/               # Express.js server + static build
+│   ├── server.js          # REST API & Supabase
+│   └── build/             # React production build
 ├── python/
-│   └── detect.py      # Flask + OpenCV untuk deteksi uang
-├── ngrok.exe          # Tunneling ke internet (opsional)
-├── deploy.ps1         # Script otomatis build + copy
+│   └── detect.py          # Flask + OpenCV untuk deteksi uang
+├── Dockerfile             # Konfigurasi Docker (untuk Cloud Run)
+├── start.sh               # Entry point: jalankan Python + Node sekaligus
+├── requirements.txt       # Dependensi Python
+├── .dockerignore          # File yang dikecualikan dari Docker build
+├── deploy.ps1             # Script otomatis build + copy (Windows)
 └── README.md
 ```
 
@@ -44,8 +48,43 @@ Pastikan semua tools berikut sudah terinstall:
 |------|-------|------|
 | Node.js | >= 18.x | https://nodejs.org |
 | Python | >= 3.9 | https://python.org |
-| MySQL | >= 8.x | https://dev.mysql.com/downloads/ |
 | Git | latest | https://git-scm.com |
+| Akun Supabase | — | https://supabase.com |
+
+> ⚠️ **MySQL tidak lagi digunakan.** Database sekarang menggunakan **Supabase** (PostgreSQL cloud).
+
+---
+
+## ☁️ Setup Supabase
+
+### 1. Buat Project di Supabase
+
+1. Login ke [https://supabase.com](https://supabase.com)
+2. Klik **New Project** → isi nama project & password
+3. Tunggu hingga project siap
+
+### 2. Buat Tabel `transactions`
+
+Buka **SQL Editor** di dashboard Supabase, lalu jalankan:
+
+```sql
+CREATE TABLE transactions (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  result VARCHAR(50),
+  confidence INT,
+  payment_method VARCHAR(20),
+  amount BIGINT,
+  status VARCHAR(20),
+  contract_code VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### 3. Ambil Credentials
+
+Buka **Project Settings → API**, catat:
+- **Project URL** → `SUPABASE_URL`
+- **service_role key** (bukan anon key) → `SUPABASE_SERVICE_ROLE_KEY`
 
 ---
 
@@ -54,43 +93,21 @@ Pastikan semua tools berikut sudah terinstall:
 ### 1. Clone repositori
 
 ```bash
-git clone https://github.com/USERNAME/deteksi-uangFIX.git
+git clone https://github.com/alfarezalfathir/deteksi-uangFIX.git
 cd deteksi-uangFIX
 ```
 
 ---
 
-### 2. Setup Database MySQL
+### 2. Buat file `.env` di folder `backend/`
 
-Buka MySQL dan jalankan perintah berikut:
-
-```sql
-CREATE DATABASE money_detector;
-
-USE money_detector;
-
-CREATE TABLE transactions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  result VARCHAR(50),
-  confidence INT,
-  payment_method VARCHAR(20),
-  amount BIGINT,
-  status VARCHAR(20),
-  contract_code VARCHAR(50),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+```bash
+# backend/.env
+SUPABASE_URL=https://xxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-> ⚠️ Pastikan MySQL berjalan dengan user `root` dan password kosong.
-> Jika berbeda, ubah konfigurasi di `backend/server.js`:
-> ```js
-> const db = mysql.createConnection({
->   host: "localhost",
->   user: "root",       // ← ganti sesuai user kamu
->   password: "",       // ← ganti sesuai password kamu
->   database: "money_detector",
-> });
-> ```
+> ⚠️ Jangan commit file `.env` ke Git! Pastikan `.gitignore` sudah mencakupnya.
 
 ---
 
@@ -117,10 +134,10 @@ cd ..
 ### 5. Install Dependensi Python
 
 ```bash
-cd python
-pip install flask flask-cors opencv-python numpy
-cd ..
+pip install -r requirements.txt
 ```
+
+> `requirements.txt` sudah mencakup: `flask`, `flask-cors`, `opencv-python-headless`, `numpy`, `pillow`
 
 ---
 
@@ -130,8 +147,6 @@ cd ..
 cd frontend
 npm run build
 cd ..
-
-# Copy hasil build ke folder backend
 ```
 
 **Windows (PowerShell):**
@@ -148,20 +163,19 @@ cp -r frontend/build backend/build
 
 ---
 
-## ▶️ Menjalankan Aplikasi
+## ▶️ Menjalankan Aplikasi (Lokal)
 
-Buka **3 terminal** secara bersamaan:
+Buka **2 terminal** secara bersamaan:
 
 ### Terminal 1 — Python (Deteksi OpenCV)
 ```bash
-cd python
-python detect.py
+python python/detect.py
 ```
 > Berjalan di `http://localhost:8000`
 
 ---
 
-### Terminal 2 — Backend (Express + MySQL)
+### Terminal 2 — Backend (Express + Supabase)
 ```bash
 cd backend
 node server.js
@@ -170,18 +184,50 @@ node server.js
 
 ---
 
-### Terminal 3 — (Opsional) Ngrok untuk akses publik
-```bash
-./ngrok http 5000
-```
-> Salin URL ngrok (contoh: `https://abc123.ngrok.io`) dan buka di browser.
-
----
-
 ### Akses Aplikasi
 
 - **Lokal:** buka `http://localhost:5000`
-- **Publik (ngrok):** buka URL yang diberikan ngrok
+
+---
+
+## 🐳 Deploy ke Google Cloud Run (Docker)
+
+Proyek ini sudah dilengkapi `Dockerfile` dan `start.sh` untuk deploy ke Cloud Run.
+
+### Cara Deploy
+
+```bash
+# Build image
+docker build -t vaultscan .
+
+# Push ke Google Container Registry (ganti PROJECT_ID)
+docker tag vaultscan gcr.io/PROJECT_ID/vaultscan
+docker push gcr.io/PROJECT_ID/vaultscan
+
+# Deploy ke Cloud Run
+gcloud run deploy vaultscan \
+  --image gcr.io/PROJECT_ID/vaultscan \
+  --platform managed \
+  --region asia-southeast2 \
+  --allow-unauthenticated \
+  --set-env-vars SUPABASE_URL=...,SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+> 💡 `start.sh` otomatis menjalankan Python Flask (background) + Express Node.js saat container start.
+
+### Dockerfile Ringkasan
+
+```dockerfile
+FROM node:22-bookworm
+# Install Python + OpenCV dependencies
+RUN apt-get install -y python3 python3-pip libgl1 libglib2.0-0
+# Install Python deps
+RUN pip3 install --break-system-packages -r requirements.txt
+# Install Node deps
+RUN npm install --omit=dev
+# Jalankan kedua service via start.sh
+CMD ["./start.sh"]
+```
 
 ---
 
@@ -195,7 +241,7 @@ Setiap kali ada perubahan di `frontend/src/App.js`:
 
 # Lalu restart server:
 # (Ctrl+C di terminal backend, kemudian:)
-node server.js
+node backend/server.js
 ```
 
 ---
@@ -205,11 +251,12 @@ node server.js
 | Fitur | Keterangan |
 |-------|------------|
 | 📷 Deteksi Uang Tunai | Analisis real-time via kamera menggunakan OpenCV |
-| 💳 Pembayaran Debit | Simulasi tap kartu — langsung tercatat |
-| 📱 e-Wallet | Simulasi scan QR — langsung tercatat |
+| 💳 Pembayaran Debit | Simulasi tap kartu — langsung tercatat ke Supabase |
+| 📱 e-Wallet | Simulasi scan QR — langsung tercatat ke Supabase |
 | 🧾 Hitung Kembalian | Input total belanja & jumlah bayar |
-| 📋 Riwayat Transaksi | 5 transaksi terakhir ditampilkan otomatis |
+| 📋 Riwayat Transaksi | Transaksi terbaru ditampilkan otomatis dari Supabase |
 | 🔒 CORS Protection | Akses Python API dibatasi hanya dari Express |
+| 🐳 Docker Ready | Bisa di-deploy ke Cloud Run dengan satu image |
 
 ---
 
@@ -217,11 +264,12 @@ node server.js
 
 | Masalah | Solusi |
 |---------|--------|
-| Kamera tidak muncul | Izinkan akses kamera di browser, gunakan HTTPS (ngrok) |
-| MySQL error | Pastikan MySQL service berjalan & kredensial sesuai |
-| Python error `cv2` | Jalankan `pip install opencv-python` |
+| Kamera tidak muncul | Izinkan akses kamera di browser, gunakan HTTPS (Cloud Run otomatis HTTPS) |
+| Supabase error | Periksa `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` di `.env` |
+| Python error `cv2` | Jalankan `pip install -r requirements.txt` |
 | Tampilan tidak update setelah build | Hard refresh browser: `Ctrl + Shift + R` |
-| Port 5000 sudah dipakai | Ganti port di `server.js` baris terakhir |
+| Port 5000 sudah dipakai | Ganti `PORT` di environment variable |
+| Docker build gagal | Pastikan `libgl1` dan `libglib2.0-0` ter-install di image |
 
 ---
 
@@ -234,22 +282,20 @@ node server.js
 📁 **File:** `backend/server.js` · `frontend/src/App.js`
 
 **Apa fungsinya?**
-Setiap kali ada transaksi (baik tunai, debit, maupun e-wallet), sistem otomatis membuat **kode kontrak unik** sebagai bukti transaksi. Kode ini tersimpan di database dan tampil di riwayat transaksi pada dashboard.
+Setiap kali ada transaksi (baik tunai, debit, maupun e-wallet), sistem otomatis membuat **kode kontrak unik** sebagai bukti transaksi. Kode ini tersimpan di Supabase dan tampil di riwayat transaksi pada dashboard.
 
 **Formatnya:** `INV-<timestamp>` → contoh: `INV-1747013452123`
 
 **Cara kerjanya:**
-- Backend generate kode → simpan ke DB → frontend ambil & tampilkan di history
+- Backend generate kode → simpan ke Supabase → frontend ambil & tampilkan di history
 
 ```js
 // backend/server.js — generate kode kontrak
 const contract_code = "INV-" + Date.now();
 
-db.query(
-  `INSERT INTO transactions (result, confidence, payment_method, amount, status, contract_code)
-   VALUES (?, ?, ?, ?, ?, ?)`,
-  [result, confidence, payment_method, amount, status, contract_code]
-);
+await supabase.from("transactions").insert([{
+  result, confidence, payment_method, amount, status, contract_code
+}]);
 ```
 
 ```js
@@ -264,11 +310,11 @@ db.query(
 📁 **File:** `frontend/src/App.js` · `backend/server.js`
 
 **Apa fungsinya?**
-Aplikasi berfungsi seperti mesin kasir (Point of Sale). Kasir bisa input total belanja dan jumlah uang yang dibayar, lalu sistem menghitung kembalian secara otomatis. Semua transaksi langsung dicatat ke database dengan status (SUCCESS/WARNING/FAILED) dan ditampilkan di dashboard.
+Aplikasi berfungsi seperti mesin kasir (Point of Sale). Kasir bisa input total belanja dan jumlah uang yang dibayar, lalu sistem menghitung kembalian secara otomatis. Semua transaksi langsung dicatat ke Supabase dengan status (SUCCESS/WARNING/FAILED) dan ditampilkan di dashboard.
 
 **Cara kerjanya:**
 - User input nominal → klik hitung → sistem kalkulasi kembalian
-- Setiap transaksi disimpan ke DB dengan status berdasarkan confidence
+- Setiap transaksi disimpan ke Supabase dengan status berdasarkan confidence
 
 ```js
 // frontend/src/App.js — hitung kembalian
@@ -280,12 +326,12 @@ const hitungKembalian = () => {
 ```
 
 ```js
-// backend/server.js — tentukan status & simpan ke DB
+// backend/server.js — tentukan status & simpan ke Supabase
 const status = confidence >= 85 ? "SUCCESS"
              : confidence >= 60 ? "WARNING"
              : "FAILED";
 
-db.query(`INSERT INTO transactions (...) VALUES (?, ?, ?, ?, ?, ?)`, [...]);
+await supabase.from("transactions").insert([{ ... }]);
 ```
 
 ---
@@ -300,7 +346,7 @@ Mendukung 3 jalur pembayaran berbeda yang masing-masing diproses secara berbeda:
 | Metode | Cara Kerja |
 |--------|------------|
 | 💵 Uang Kertas | Frame kamera dikirim ke Python → dianalisis piksel putih via OpenCV → hasilkan status ASLI/MERAGUKAN/PALSU |
-| 💳 Debit/Kredit | Tombol debit di klik → Express langsung set result "DEBIT SUCCESS" tanpa perlu kamera |
+| 💳 Debit/Kredit | Tombol debit diklik → Express langsung set result "DEBIT SUCCESS" tanpa perlu kamera |
 | 📱 e-Wallet (Dana/GoPay/OVO) | Sama seperti debit, set "E-WALLET SUCCESS" otomatis |
 
 ```python
@@ -313,11 +359,12 @@ else:                       result = "PALSU"      # sedikit = kemungkinan palsu
 
 ```js
 // backend/server.js — routing metode pembayaran
-if (req.body.payment_method === "cash") {
-  // → kirim ke Python untuk dianalisis
-} else if (req.body.payment_method === "debit") {
+if (payment_method === "cash") {
+  // → kirim ke Python untuk dianalisis via axios
+  const response = await axios.post("http://127.0.0.1:8000/detect", { image });
+} else if (payment_method === "debit") {
   result = "DEBIT SUCCESS";    confidence = 100;
-} else if (req.body.payment_method === "ewallet") {
+} else if (payment_method === "ewallet") {
   result = "E-WALLET SUCCESS"; confidence = 100;
 }
 ```
@@ -333,7 +380,8 @@ Keamanan diterapkan di setiap lapisan agar aplikasi tidak mudah diserang atau di
 
 - **CORS Restriction** → Python Flask hanya menerima request dari Express, tidak bisa diakses langsung dari luar
 - **Payload Limit** → request lebih dari 10MB langsung ditolak, mencegah serangan oversized request
-- **Prepared Statements** → query ke database menggunakan `?` parameter, bukan string langsung → aman dari SQL Injection
+- **Supabase Service Role Key** → operasi database menggunakan service role key yang disimpan di environment variable, bukan hardcode di kode
+- **Parameterized Query via Supabase SDK** → insert data menggunakan Supabase client, aman dari SQL Injection
 - **Validasi Input** → request tanpa gambar (untuk mode cash) langsung ditolak sebelum diproses
 
 ```python
@@ -349,11 +397,15 @@ if payment_method == "cash" and not image:
 // backend/server.js — batasi ukuran request
 app.use(express.json({ limit: "10mb" }));
 
-// backend/server.js — prepared statements, aman dari SQL Injection
-db.query(
-  `INSERT INTO transactions (...) VALUES (?, ?, ?, ?, ?, ?)`,
-  [result, confidence, payment_method, amount, status, contract_code]
-  // ↑ nilai dipisah dari query string → tidak bisa diinjeksi
+// backend/server.js — Supabase SDK (parameterized, aman dari SQL Injection)
+const { error } = await supabase.from("transactions").insert([{
+  result, confidence, payment_method, amount, status, contract_code
+}]);
+
+// Credentials dari environment variable, bukan hardcode
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 ```
 
