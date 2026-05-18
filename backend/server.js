@@ -2,13 +2,13 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const axios = require("axios");
-require("dotenv").config();
+require("dotenv").config(); // untuk membaca file .env
 
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 
-const supabase = createClient(
+const supabase = createClient( // menggunakan supabase
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
@@ -30,19 +30,19 @@ app.post("/detect", async (req, res) => {
     let confidence = 100;
 
     const payment_method = req.body.payment_method || "cash";
-    const amount = req.body.amount || 50000;
+    const amount = req.body.amount || 50000; //jumlah uang yang diinputkan (POS) //ini nilai default
 
-    if (payment_method === "cash") {
+    if (payment_method === "cash") { // kode cash payment menggunakan cv / AI
       const response = await axios.post("http://127.0.0.1:8000/detect", {
         image: req.body.image,
       });
 
       result = response.data.result;
       confidence = response.data.confidence;
-    } else if (payment_method === "debit") {
+    } else if (payment_method === "debit") { // debit backend langsung simpan ke db success
       result = "DEBIT SUCCESS";
       confidence = 100;
-    } else if (payment_method === "ewallet") {
+    } else if (payment_method === "ewallet") { // ewallet backend langsung simpan ke db success
       result = "E-WALLET SUCCESS";
       confidence = 100;
     }
@@ -50,9 +50,9 @@ app.post("/detect", async (req, res) => {
     const status =
       confidence >= 85 ? "SUCCESS" : confidence >= 60 ? "WARNING" : "FAILED";
 
-    const contract_code = "INV-" + Date.now();
+    const contract_code = "INV-" + Date.now(); //generate kode kontrak unik
 
-    const { error } = await supabase.from("transactions").insert([
+    const { error } = await supabase.from("transactions").insert([ //data yang disimpan ke database (kontrak/POS)
       {
         result,
         confidence,

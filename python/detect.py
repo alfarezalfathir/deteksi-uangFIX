@@ -91,7 +91,7 @@ def detect():
         )[1]
 
         # HITUNG PIXEL PUTIH
-        white_pixels = cv2.countNonZero(thresh)
+        white_pixels = cv2.countNonZero(thresh) #code untuk menghitung pixel putih di uang cash 
 
         """
         ========================

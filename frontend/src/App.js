@@ -11,7 +11,7 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [totalBelanja, setTotalBelanja] = useState("");
+  const [totalBelanja, setTotalBelanja] = useState(""); // sistem POS integration with inventory
   const [jumlahBayar, setJumlahBayar] = useState("");
   const [kembalian, setKembalian] = useState(0);
 
@@ -56,7 +56,7 @@ function App() {
   };
 
   const startScan = async () => {
-    if (paymentMethod === "cash") {
+    if (paymentMethod === "cash") {            // payment method cash trigger scan
       if (intervalRef.current) return;
       setIsScanning(true);
       intervalRef.current = setInterval(() => {
@@ -64,7 +64,7 @@ function App() {
       }, 1800);
     } else if (paymentMethod === "debit") {
       try {
-        await axios.post("/detect", {
+        await axios.post("/detect", { // debit payment
           image: null,
           payment_method: "debit",
           amount: totalBelanja,
@@ -76,7 +76,7 @@ function App() {
       } catch (error) {
         console.log(error);
       }
-    } else if (paymentMethod === "ewallet") {
+    } else if (paymentMethod === "ewallet") { // ewallet backend langsung simpan ke db success
       try {
         await axios.post("/detect", {
           image: null,
@@ -101,7 +101,7 @@ function App() {
     }
   };
 
-  const hitungKembalian = () => {
+  const hitungKembalian = () => {               // POS kembalian calculation
     const kembali = jumlahBayar - totalBelanja;
     setKembalian(kembali);
   };
@@ -115,8 +115,8 @@ function App() {
     canvas.height = 480;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const image = canvas.toDataURL("image/jpeg", 0.9);
-    try {
-      const response = await axios.post("/detect", {
+    try {x
+      const response = await axios.post("/detect", {  // kode kirim data frame ke python / backend nodejs
         image,
         payment_method: paymentMethod,
         amount: totalBelanja,
@@ -525,7 +525,7 @@ function App() {
                         {item.payment_method?.toUpperCase()} · Rp{" "}
                         {formatRupiah(item.amount)}
                       </div>
-                      <div style={s.histCode}>{item.contract_code}</div>
+                      <div style={s.histCode}>{item.contract_code}</div> //kode kontrak unik 
                     </div>
                     <div style={s.histRight}>
                       <div style={{ ...s.histConf, color: rColor }}>
