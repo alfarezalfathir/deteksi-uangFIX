@@ -28,26 +28,23 @@ app.post("/detect", async (req, res) => {
   try {
     let result = "SUCCESS";
     let confidence = 100;
-
-    // tambahan baru buat hasil nominal dari Python / Roboflow
     let detected_nominal = null;
     let detected_class = null;
+    let detected_box = null;
 
     const payment_method = req.body.payment_method || "cash";
-    const amount = req.body.amount || 50000;
+    const amount = Number(req.body.amount) || 0;
 
     if (payment_method === "cash") {
-      // cash dikirim ke Python detector
       const response = await axios.post("http://127.0.0.1:8000/detect", {
         image: req.body.image,
       });
 
       result = response.data.result;
       confidence = response.data.confidence;
-
-      // tambahan baru: ambil nominal dari Python
       detected_nominal = response.data.nominal;
       detected_class = response.data.detected_class;
+      detected_box = response.data.detected_box;
     } else if (payment_method === "debit") {
       result = "DEBIT SUCCESS";
       confidence = 100;
@@ -69,8 +66,6 @@ app.post("/detect", async (req, res) => {
         amount,
         status,
         contract_code,
-
-        // tambahan baru disimpan ke database
         detected_nominal,
         detected_class,
       },
@@ -87,16 +82,14 @@ app.post("/detect", async (req, res) => {
     res.json({
       result,
       confidence,
-
-      // tambahan baru dikirim ke React
       detected_nominal,
       detected_class,
-
+      detected_box,
       color:
         confidence >= 85 ? "#10b981" : confidence >= 60 ? "#f59e0b" : "#ef4444",
     });
   } catch (error) {
-    console.log(error);
+    console.log("Detect error:", error);
 
     res.status(500).json({
       error: "Python detection error",
@@ -127,7 +120,7 @@ app.get("/transactions", async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    console.log(error);
+    console.log("Transaction error:", error);
 
     res.status(500).json({
       error: "Server error",
