@@ -17,14 +17,6 @@ ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "rupiah-emisi-2022/3")
 
 NOMINAL_MAP = {
-    "001": 1000,
-    "002": 2000,
-    "005": 5000,
-    "010": 10000,
-    "020": 20000,
-    "050": 50000,
-    "100": 100000,
-
     "001_banknote": 1000,
     "002_banknote": 2000,
     "005_banknote": 5000,
@@ -57,7 +49,7 @@ def decode_base64_image(image_data):
 def detect_nominal_with_roboflow(img):
     if not ROBOFLOW_API_KEY:
         print("ROBOFLOW_API_KEY belum diisi di .env")
-        return None, None, 0, None
+        return None, None, 0
 
     temp_path = None
 
@@ -93,7 +85,7 @@ def detect_nominal_with_roboflow(img):
         ]
 
         if not valid_predictions:
-            return None, None, 0, None
+            return None, None, 0
 
         best = max(valid_predictions, key=lambda p: p.get("confidence", 0))
 
@@ -101,18 +93,11 @@ def detect_nominal_with_roboflow(img):
         nominal = NOMINAL_MAP.get(class_name)
         confidence = round(best.get("confidence", 0) * 100)
 
-        box = {
-            "x": best.get("x"),
-            "y": best.get("y"),
-            "width": best.get("width"),
-            "height": best.get("height"),
-        }
-
-        return nominal, class_name, confidence, box
+        return nominal, class_name, confidence
 
     except Exception as e:
         print("Roboflow error:", e)
-        return None, None, 0, None
+        return None, None, 0
 
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -164,7 +149,7 @@ def detect():
         if img is None:
             return jsonify({"error": "Invalid image"}), 400
 
-        nominal, detected_class, nominal_confidence, detected_box = detect_nominal_with_roboflow(img)
+        nominal, detected_class, nominal_confidence = detect_nominal_with_roboflow(img)
 
         result, color, authenticity_confidence = check_authenticity_opencv(img)
 
@@ -172,14 +157,12 @@ def detect():
 
         print("Nominal:", nominal)
         print("Class:", detected_class)
-        print("Box:", detected_box)
         print("Result:", result)
         print("Confidence:", final_confidence)
 
         return jsonify({
             "nominal": nominal,
             "detected_class": detected_class,
-            "detected_box": detected_box,
             "result": result,
             "color": color,
             "confidence": final_confidence,
@@ -193,4 +176,4 @@ def detect():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(port=8000, debug=True)
