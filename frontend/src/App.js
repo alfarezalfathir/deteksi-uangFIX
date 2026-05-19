@@ -15,9 +15,9 @@ function App() {
   const [jumlahBayar, setJumlahBayar] = useState("");
   const [kembalian, setKembalian] = useState(0);
 
-  // Tambahan baru: hasil nominal dari Roboflow/Python
   const [detectedNominal, setDetectedNominal] = useState(null);
   const [detectedClass, setDetectedClass] = useState("");
+  const [detectedBox, setDetectedBox] = useState(null);
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -53,16 +53,19 @@ function App() {
         },
         audio: false,
       });
+
       videoRef.current.srcObject = stream;
     } catch (error) {
-      console.log(error);
+      console.log("Camera error:", error);
     }
   };
 
   const startScan = async () => {
     if (paymentMethod === "cash") {
       if (intervalRef.current) return;
+
       setIsScanning(true);
+
       intervalRef.current = setInterval(() => {
         captureFrame();
       }, 1800);
@@ -79,6 +82,7 @@ function App() {
         setConfidence(100);
         setDetectedNominal(null);
         setDetectedClass("");
+        setDetectedBox(null);
 
         fetchTransactions();
       } catch (error) {
@@ -97,6 +101,7 @@ function App() {
         setConfidence(100);
         setDetectedNominal(null);
         setDetectedClass("");
+        setDetectedBox(null);
 
         fetchTransactions();
       } catch (error) {
@@ -107,6 +112,7 @@ function App() {
 
   const stopScan = () => {
     setIsScanning(false);
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -114,7 +120,7 @@ function App() {
   };
 
   const hitungKembalian = () => {
-    const kembali = jumlahBayar - totalBelanja;
+    const kembali = Number(jumlahBayar) - Number(totalBelanja);
     setKembalian(kembali);
   };
 
@@ -143,14 +149,13 @@ function App() {
       setResult(response.data.result);
       setColor(response.data.color);
       setConfidence(response.data.confidence);
-
-      // Tambahan baru: ambil nominal hasil scan dari backend
       setDetectedNominal(response.data.detected_nominal);
       setDetectedClass(response.data.detected_class);
+      setDetectedBox(response.data.detected_box);
 
       fetchTransactions();
 
-      if (response.data.result === "ASLI" && response.data.confidence >= 90) {
+      if (response.data.detected_nominal && response.data.confidence >= 80) {
         stopScan();
       }
     } catch (error) {
@@ -244,6 +249,28 @@ function App() {
 
           <div style={s.cameraWrap}>
             <video ref={videoRef} autoPlay playsInline muted style={s.video} />
+
+            {detectedBox && (
+              <div
+                style={{
+                  ...s.detectBox,
+                  left: `${((detectedBox.x - detectedBox.width / 2) / 640) * 100}%`,
+                  top: `${((detectedBox.y - detectedBox.height / 2) / 480) * 100}%`,
+                  width: `${(detectedBox.width / 640) * 100}%`,
+                  height: `${(detectedBox.height / 480) * 100}%`,
+                  borderColor: color || "#22c55e",
+                }}
+              >
+                <div
+                  style={{ ...s.detectLabel, background: color || "#22c55e" }}
+                >
+                  {detectedClass || "Uang"}{" "}
+                  {detectedNominal
+                    ? `· Rp ${Number(detectedNominal).toLocaleString("id-ID")}`
+                    : ""}
+                </div>
+              </div>
+            )}
 
             {[
               { top: 10, left: 10, borderRight: "none", borderBottom: "none" },
@@ -562,15 +589,16 @@ function App() {
                       </div>
 
                       <div style={s.histMeta}>
-                        {item.payment_method?.toUpperCase()} · Rp{" "}
+                        {item.payment_method?.toUpperCase()} · Total: Rp{" "}
                         {formatRupiah(item.amount)}
                       </div>
 
-                      {item.detected_nominal && (
-                        <div style={s.histMeta}>
-                          Nominal Scan: Rp {formatRupiah(item.detected_nominal)}
-                        </div>
-                      )}
+                      <div style={s.histMeta}>
+                        Scan:{" "}
+                        {item.detected_nominal
+                          ? `Rp ${formatRupiah(item.detected_nominal)}`
+                          : "Belum terdeteksi"}
+                      </div>
 
                       <div style={s.histCode}>{item.contract_code}</div>
                     </div>
@@ -718,6 +746,28 @@ const s = {
     background: "#0f172a",
   },
   video: { width: "100%", height: "100%", objectFit: "cover" },
+
+  detectBox: {
+    position: "absolute",
+    border: "3px solid #22c55e",
+    borderRadius: 8,
+    boxShadow: "0 0 12px rgba(34,197,94,0.7)",
+    pointerEvents: "none",
+    zIndex: 10,
+  },
+
+  detectLabel: {
+    position: "absolute",
+    top: -30,
+    left: 0,
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: 800,
+    padding: "4px 8px",
+    borderRadius: 6,
+    whiteSpace: "nowrap",
+  },
+
   corner: {
     position: "absolute",
     width: 18,
