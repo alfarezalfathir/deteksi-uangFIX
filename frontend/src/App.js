@@ -11,9 +11,13 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [totalBelanja, setTotalBelanja] = useState(""); // sistem POS integration with inventory
+  const [totalBelanja, setTotalBelanja] = useState("");
   const [jumlahBayar, setJumlahBayar] = useState("");
   const [kembalian, setKembalian] = useState(0);
+
+  // Tambahan baru: hasil nominal dari Roboflow/Python
+  const [detectedNominal, setDetectedNominal] = useState(null);
+  const [detectedClass, setDetectedClass] = useState("");
 
   const intervalRef = useRef(null);
   const [pulse, setPulse] = useState(false);
@@ -56,7 +60,7 @@ function App() {
   };
 
   const startScan = async () => {
-    if (paymentMethod === "cash") {            // payment method cash trigger scan
+    if (paymentMethod === "cash") {
       if (intervalRef.current) return;
       setIsScanning(true);
       intervalRef.current = setInterval(() => {
@@ -64,28 +68,36 @@ function App() {
       }, 1800);
     } else if (paymentMethod === "debit") {
       try {
-        await axios.post("/detect", { // debit payment
+        await axios.post("/detect", {
           image: null,
           payment_method: "debit",
           amount: totalBelanja,
         });
+
         setResult("DEBIT SUCCESS");
         setColor("#10b981");
         setConfidence(100);
+        setDetectedNominal(null);
+        setDetectedClass("");
+
         fetchTransactions();
       } catch (error) {
         console.log(error);
       }
-    } else if (paymentMethod === "ewallet") { // ewallet backend langsung simpan ke db success
+    } else if (paymentMethod === "ewallet") {
       try {
         await axios.post("/detect", {
           image: null,
           payment_method: "ewallet",
           amount: totalBelanja,
         });
+
         setResult("E-WALLET SUCCESS");
         setColor("#10b981");
         setConfidence(100);
+        setDetectedNominal(null);
+        setDetectedClass("");
+
         fetchTransactions();
       } catch (error) {
         console.log(error);
@@ -101,7 +113,7 @@ function App() {
     }
   };
 
-  const hitungKembalian = () => {               // POS kembalian calculation
+  const hitungKembalian = () => {
     const kembali = jumlahBayar - totalBelanja;
     setKembalian(kembali);
   };
@@ -109,22 +121,35 @@ function App() {
   const captureFrame = async () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+
     if (!video || video.readyState !== 4) return;
+
     const context = canvas.getContext("2d");
+
     canvas.width = 640;
     canvas.height = 480;
+
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
     const image = canvas.toDataURL("image/jpeg", 0.9);
-    try {x
-      const response = await axios.post("/detect", {  // kode kirim data frame ke python / backend nodejs
+
+    try {
+      const response = await axios.post("/detect", {
         image,
         payment_method: paymentMethod,
         amount: totalBelanja,
       });
+
       setResult(response.data.result);
       setColor(response.data.color);
       setConfidence(response.data.confidence);
+
+      // Tambahan baru: ambil nominal hasil scan dari backend
+      setDetectedNominal(response.data.detected_nominal);
+      setDetectedClass(response.data.detected_class);
+
       fetchTransactions();
+
       if (response.data.result === "ASLI" && response.data.confidence >= 90) {
         stopScan();
       }
@@ -164,7 +189,6 @@ function App() {
 
   return (
     <div style={s.root}>
-      {/* Inject font */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -176,7 +200,6 @@ function App() {
         @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(26,86,219,0.35)} 50%{box-shadow:0 0 0 8px rgba(26,86,219,0)} }
       `}</style>
 
-      {/* HEADER */}
       <header style={s.header}>
         <div style={s.headerBg} />
         <div style={s.headerContent}>
@@ -189,6 +212,7 @@ function App() {
               <div style={s.appSub}>Verifikasi Uang Tunai</div>
             </div>
           </div>
+
           <div
             style={{
               ...s.statusPill,
@@ -209,7 +233,6 @@ function App() {
       </header>
 
       <main style={s.main}>
-        {/* CAMERA CARD */}
         <div style={s.card}>
           <div style={s.cardHeader}>
             <div style={s.cardIcon}>📷</div>
@@ -222,7 +245,6 @@ function App() {
           <div style={s.cameraWrap}>
             <video ref={videoRef} autoPlay playsInline muted style={s.video} />
 
-            {/* corners */}
             {[
               { top: 10, left: 10, borderRight: "none", borderBottom: "none" },
               { top: 10, right: 10, borderLeft: "none", borderBottom: "none" },
@@ -257,7 +279,6 @@ function App() {
               />
             )}
 
-            {/* overlay when scanning */}
             {isScanning && (
               <div style={s.scanOverlay}>
                 <div style={s.scanBadge}>● SCANNING</div>
@@ -266,7 +287,6 @@ function App() {
           </div>
         </div>
 
-        {/* RESULT CARD */}
         <div
           style={{
             ...s.card,
@@ -277,8 +297,9 @@ function App() {
           <div style={s.resultTop}>
             <div>
               <div style={s.cardTitle}>Hasil Deteksi</div>
-              <div style={s.cardSub}>Verifikasi keaslian uang</div>
+              <div style={s.cardSub}>Verifikasi nominal dan keaslian uang</div>
             </div>
+
             <div
               style={{
                 ...s.resultBigBadge,
@@ -293,12 +314,27 @@ function App() {
 
           <div style={s.divider} />
 
+          <div style={s.nominalBox}>
+            <div style={s.nominalLabel}>Nominal Terdeteksi</div>
+            <div style={s.nominalValue}>
+              {detectedNominal
+                ? `Rp ${Number(detectedNominal).toLocaleString("id-ID")}`
+                : "—"}
+            </div>
+            <div style={s.nominalClass}>
+              {detectedClass || "Belum ada class nominal"}
+            </div>
+          </div>
+
+          <div style={s.divider} />
+
           <div style={s.metricsRow}>
             <div style={s.metricBox}>
               <div style={s.metricTitle}>Confidence</div>
               <div style={s.metricBigVal}>
                 {confidence > 0 ? `${confidence}%` : "—"}
               </div>
+
               <div style={s.barTrack}>
                 <div
                   style={{
@@ -309,7 +345,9 @@ function App() {
                 />
               </div>
             </div>
+
             <div style={s.metricDivider} />
+
             <div style={s.metricBox}>
               <div style={s.metricTitle}>Tingkat Keyakinan</div>
               <div
@@ -328,7 +366,6 @@ function App() {
           </div>
         </div>
 
-        {/* TRANSACTION FORM */}
         <div style={s.card}>
           <div style={s.cardHeader}>
             <div style={s.cardIcon}>🧾</div>
@@ -386,6 +423,7 @@ function App() {
               >
                 {kembalian >= 0 ? "💰 Kembalian" : "⚠️ Kurang Bayar"}
               </div>
+
               <div
                 style={{
                   ...s.kembalianVal,
@@ -398,7 +436,6 @@ function App() {
           )}
         </div>
 
-        {/* PAYMENT METHOD */}
         <div style={s.card}>
           <div style={s.cardHeader}>
             <div style={s.cardIcon}>💳</div>
@@ -411,6 +448,7 @@ function App() {
           <div style={s.payRow}>
             {payMethods.map((m) => {
               const active = paymentMethod === m.id;
+
               return (
                 <button
                   key={m.id}
@@ -437,7 +475,6 @@ function App() {
           </div>
         </div>
 
-        {/* SCAN BUTTONS */}
         <div style={s.actionRow}>
           <button
             onClick={startScan}
@@ -452,6 +489,7 @@ function App() {
             <span style={{ fontSize: 18 }}>🔍</span>
             Mulai Scan
           </button>
+
           <button
             onClick={stopScan}
             disabled={!isScanning}
@@ -467,7 +505,6 @@ function App() {
           </button>
         </div>
 
-        {/* HISTORY */}
         <div style={s.card}>
           <div style={s.cardHeader}>
             <div style={s.cardIcon}>📋</div>
@@ -491,18 +528,19 @@ function App() {
                   item.result === "ASLI" ||
                   item.result === "DEBIT SUCCESS" ||
                   item.result === "E-WALLET SUCCESS";
-                const rColor =
-                  isSuccess
-                    ? "#16a34a"
-                    : item.result === "MERAGUKAN"
-                      ? "#d97706"
-                      : "#dc2626";
-                const rBg =
-                  isSuccess
-                    ? "#f0fdf4"
-                    : item.result === "MERAGUKAN"
-                      ? "#fffbeb"
-                      : "#fef2f2";
+
+                const rColor = isSuccess
+                  ? "#16a34a"
+                  : item.result === "MERAGUKAN"
+                    ? "#d97706"
+                    : "#dc2626";
+
+                const rBg = isSuccess
+                  ? "#f0fdf4"
+                  : item.result === "MERAGUKAN"
+                    ? "#fffbeb"
+                    : "#fef2f2";
+
                 return (
                   <div
                     key={item.id}
@@ -517,16 +555,26 @@ function App() {
                           ? "⚠️"
                           : "❌"}
                     </div>
+
                     <div style={s.histInfo}>
                       <div style={{ ...s.histResult, color: rColor }}>
                         {item.result}
                       </div>
+
                       <div style={s.histMeta}>
                         {item.payment_method?.toUpperCase()} · Rp{" "}
                         {formatRupiah(item.amount)}
                       </div>
-                      <div style={s.histCode}>{item.contract_code}</div> //kode kontrak unik 
+
+                      {item.detected_nominal && (
+                        <div style={s.histMeta}>
+                          Nominal Scan: Rp {formatRupiah(item.detected_nominal)}
+                        </div>
+                      )}
+
+                      <div style={s.histCode}>{item.contract_code}</div>
                     </div>
+
                     <div style={s.histRight}>
                       <div style={{ ...s.histConf, color: rColor }}>
                         {item.confidence}%
@@ -552,7 +600,6 @@ function App() {
           )}
         </div>
 
-        {/* FOOTER */}
         <div style={s.footer}>
           🔒 Digunakan hanya untuk keperluan verifikasi internal
         </div>
@@ -573,7 +620,6 @@ const s = {
     paddingBottom: 32,
   },
 
-  // HEADER
   header: {
     position: "relative",
     overflow: "hidden",
@@ -629,7 +675,6 @@ const s = {
     display: "inline-block",
   },
 
-  // MAIN
   main: {
     padding: "0 16px",
     display: "flex",
@@ -637,7 +682,6 @@ const s = {
     gap: 14,
   },
 
-  // CARDS
   card: {
     background: "#fff",
     borderRadius: 20,
@@ -666,7 +710,6 @@ const s = {
   cardTitle: { fontWeight: 700, fontSize: 14, color: "#1e293b" },
   cardSub: { fontSize: 11, color: "#94a3b8", marginTop: 1 },
 
-  // CAMERA
   cameraWrap: {
     position: "relative",
     aspectRatio: "4/3",
@@ -731,7 +774,6 @@ const s = {
     backdropFilter: "blur(4px)",
   },
 
-  // RESULT
   resultCard: { transition: "border-color 0.4s" },
   resultTop: {
     display: "flex",
@@ -750,6 +792,35 @@ const s = {
     flexShrink: 0,
   },
   divider: { height: 1, background: "#f1f5f9", marginBottom: 14 },
+
+  nominalBox: {
+    padding: "12px 14px",
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    marginBottom: 14,
+  },
+  nominalLabel: {
+    fontSize: 10,
+    color: "#94a3b8",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    marginBottom: 4,
+  },
+  nominalValue: {
+    fontSize: 24,
+    fontWeight: 800,
+    color: "#1e293b",
+    letterSpacing: "-0.03em",
+  },
+  nominalClass: {
+    fontSize: 11,
+    color: "#64748b",
+    marginTop: 4,
+    fontFamily: "monospace",
+  },
+
   metricsRow: { display: "flex", gap: 0, alignItems: "center" },
   metricBox: { flex: 1 },
   metricDivider: {
@@ -794,7 +865,6 @@ const s = {
   },
   metricSub: { fontSize: 10, color: "#94a3b8" },
 
-  // FORM
   inputGroup: { marginBottom: 12 },
   label: {
     fontSize: 11,
@@ -859,7 +929,6 @@ const s = {
   kembalianLabel: { fontSize: 12, fontWeight: 700 },
   kembalianVal: { fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em" },
 
-  // PAYMENT METHOD
   payRow: { display: "flex", gap: 10 },
   payBtn: {
     flex: 1,
@@ -874,7 +943,6 @@ const s = {
     transition: "all 0.25s ease",
   },
 
-  // ACTION BUTTONS
   actionRow: { display: "flex", gap: 10 },
   actionBtn: {
     flex: 1,
@@ -901,7 +969,6 @@ const s = {
     border: "1.5px solid #e2e8f0",
   },
 
-  // HISTORY
   historyList: { display: "flex", flexDirection: "column", gap: 10 },
   histItem: {
     display: "flex",
