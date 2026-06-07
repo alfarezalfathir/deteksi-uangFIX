@@ -87,6 +87,7 @@ function App() {
   const stopScan = () => {
     setIsScanning(false);
 
+      // fe ambil gambar dari camera
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -109,6 +110,8 @@ function App() {
     const image = canvas.toDataURL("image/jpeg", 0.9);
 
     try {
+      // === FRAME KAMERA DIKIRIM UNTUK DETEKSI NOMINAL UANG KERTAS ===
+      // Backend meneruskan gambar ini ke python/detect.py, lalu hasil nominalnya ditampilkan di UI.
       const response = await axios.post("/detect", {
         image,
         payment_method: paymentMethod,
@@ -118,6 +121,7 @@ function App() {
       setResult(response.data.result);
       setColor(response.data.color);
       setConfidence(response.data.confidence);
+      // Hasil nominal uang kertas yang terdeteksi oleh model.
       setDetectedNominal(response.data.detected_nominal);
       setDetectedClass(response.data.detected_class);
       setDetectedBox(response.data.detected_box);

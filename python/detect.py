@@ -16,6 +16,9 @@ CORS(app)
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "rupiah-emisi-2022/3")
 
+# === BAGIAN DETEKSI NOMINAL UANG KERTAS ===
+# Mapping class hasil model Roboflow ke nominal rupiah.
+# Contoh: class "050" / "050_banknote" / "050_nominal" akan dibaca sebagai Rp 50.000.
 NOMINAL_MAP = {
     "001": 1000,
     "002": 2000,
@@ -55,6 +58,10 @@ def decode_base64_image(image_data):
 
 
 def detect_nominal_with_roboflow(img):
+    # === AMBIL MODEL UANG DAN DETEKSI NOMINAL ===
+    # Fungsi ini mengirim gambar uang ke model Roboflow:
+    # ROBOFLOW_MODEL_ID default = "rupiah-emisi-2022/3".
+    # Hasil model dipakai untuk menentukan ini uang kertas nominal berapa.
     if not ROBOFLOW_API_KEY:
         print("ROBOFLOW_API_KEY belum diisi")
         return None, None, 0, None
@@ -66,6 +73,10 @@ def detect_nominal_with_roboflow(img):
             temp_path = temp_file.name
             cv2.imwrite(temp_path, img)
 
+        # === AMBIL MODEL UANG DAN DETEKSI NOMINAL ===
+        # Fungsi ini mengirim gambar uang ke model Roboflow:
+        # ROBOFLOW_MODEL_ID default = "rupiah-emisi-2022/3".
+        # Hasil model dipakai untuk menentukan ini uang kertas nominal berapa.
         url = f"https://serverless.roboflow.com/{ROBOFLOW_MODEL_ID}"
 
         params = {
@@ -87,6 +98,7 @@ def detect_nominal_with_roboflow(img):
 
         predictions = data.get("predictions", [])
 
+        # Ambil hanya prediksi yang class-nya dikenal di NOMINAL_MAP.
         valid_predictions = [
             p for p in predictions
             if p.get("class") in NOMINAL_MAP
@@ -95,9 +107,11 @@ def detect_nominal_with_roboflow(img):
         if not valid_predictions:
             return None, None, 0, None
 
+        # Kalau model menemukan beberapa kemungkinan, pilih yang confidence-nya paling tinggi.
         best = max(valid_predictions, key=lambda p: p.get("confidence", 0))
 
         class_name = best.get("class")
+        # Di sinilah class dari model diubah menjadi nominal rupiah.
         nominal = NOMINAL_MAP.get(class_name)
         confidence = round(best.get("confidence", 0) * 100)
 
@@ -164,6 +178,8 @@ def detect():
         if img is None:
             return jsonify({"error": "Invalid image"}), 400
 
+        # === PANGGIL DETEKSI NOMINAL UANG KERTAS ===
+        # Output-nya: nominal rupiah, nama class model, confidence, dan posisi kotak deteksi.
         nominal, detected_class, nominal_confidence, detected_box = detect_nominal_with_roboflow(img)
 
         result, color, authenticity_confidence = check_authenticity_opencv(img)
@@ -176,6 +192,7 @@ def detect():
         print("Result:", result)
         print("Confidence:", final_confidence)
 
+        # === MAPPING NOMINAL DAN BOX KE GAMBAR (Frontend akan pakai ini) ===
         return jsonify({
             "nominal": nominal,
             "detected_class": detected_class,

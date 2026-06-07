@@ -16,6 +16,7 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
+// POST /detect → menerima frame dari frontend, lalu meneruskan frame tersebut ke Python untuk deteksi nominal
 app.post("/detect", async (req, res) => {
   console.log("Frame masuk ke Express");
 
@@ -30,12 +31,15 @@ app.post("/detect", async (req, res) => {
     const amount = Number(req.body.amount) || 0;
 
     if (payment_method === "cash") {
+      // === KIRIM GAMBAR KE PYTHON UNTUK DETEKSI UANG KERTAS ===
+      // Python akan memanggil model Roboflow, lalu mengembalikan nominal yang terdeteksi.
       const response = await axios.post("http://127.0.0.1:8000/detect", {
         image: req.body.image,
       });
 
       result = response.data.result;
       confidence = response.data.confidence;
+      // Nilai ini berasal dari hasil mapping class model ke nominal rupiah di python/detect.py.
       detected_nominal = response.data.nominal;
       detected_class = response.data.detected_class;
       detected_box = response.data.detected_box;
