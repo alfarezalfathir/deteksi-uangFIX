@@ -1,622 +1,1794 @@
-import React, { useEffect, useRef, useState } from "react";
-import axios from "axios";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  Camera,
+  CheckCircle2,
+  ClipboardList,
+  Database,
+  FileText,
+  Gauge,
+  LayoutDashboard,
+  LockKeyhole,
+  LogOut,
+  RefreshCw,
+  ScanLine,
+  ShieldCheck,
+  Sparkles,
+  Upload,
+  UserCircle2,
+  WalletCards,
+} from "lucide-react";
+
+import "./App.css";
+
+const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+
+function formatRupiah(value) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function statusClass(status) {
+  return String(status || "")
+    .toLowerCase()
+    .replaceAll(" ", "_");
+}
 
 function App() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const intervalRef = useRef(null);
+  const [token, setToken] = useState(
+    localStorage.getItem("vaultscan_token") || ""
+  );
 
-  const [result, setResult] = useState("");
-  const [color, setColor] = useState("#94a3b8");
-  const [confidence, setConfidence] = useState(0);
-  const [isScanning, setIsScanning] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const savedUser = localStorage.getItem("vaultscan_user");
 
-  const [detectedNominal, setDetectedNominal] = useState(null);
-  const [detectedClass, setDetectedClass] = useState("");
-  const [detectedBox, setDetectedBox] = useState(null);
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
 
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [totalBelanja, setTotalBelanja] = useState("");
-  const [jumlahBayar, setJumlahBayar] = useState("");
-  const [kembalian, setKembalian] = useState(0);
+  const [activePage, setActivePage] = useState("dashboard");
+  const [contracts, setContracts] = useState([]);
   const [transactions, setTransactions] = useState([]);
 
-  useEffect(() => {
-    startCamera();
-    fetchTransactions();
-  }, []);
+  const [loading, setLoading] = useState(false);
+  const [globalMessage, setGlobalMessage] = useState("");
+  const [globalError, setGlobalError] = useState("");
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+  function saveSession(newToken, user) {
+    localStorage.setItem("vaultscan_token", newToken);
+    localStorage.setItem(
+      "vaultscan_user",
+      JSON.stringify(user)
+    );
+
+    setToken(newToken);
+    setCurrentUser(user);
+  }
+
+  function clearSession() {
+    localStorage.removeItem("vaultscan_token");
+    localStorage.removeItem("vaultscan_user");
+
+    setToken("");
+    setCurrentUser(null);
+    setContracts([]);
+    setTransactions([]);
+    setActivePage("dashboard");
+  }
+
+  async function apiRequest(endpoint, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}${endpoint}`,
+      {
+        ...options,
+        headers: {
+          ...(options.body instanceof FormData
+            ? {}
+            : {
+                "Content-Type": "application/json",
+              }),
+          ...(token
+            ? {
+                Authorization: `Bearer ${token}`,
+              }
+            : {}),
+          ...(options.headers || {}),
         },
-        audio: false,
-      });
-
-      videoRef.current.srcObject = stream;
-    } catch (error) {
-      console.log("Camera error:", error);
-      alert("Kamera tidak bisa dibuka. Cek permission kamera.");
-    }
-  };
-
-  const fetchTransactions = async () => {
-    try {
-      const response = await axios.get("/transactions");
-      setTransactions(response.data);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const startScan = async () => {
-    if (paymentMethod === "cash") {
-      if (intervalRef.current) return;
-
-      setIsScanning(true);
-
-      intervalRef.current = setInterval(() => {
-        captureFrame();
-      }, 1800);
-    } else {
-      try {
-        const response = await axios.post("/detect", {
-          image: null,
-          payment_method: paymentMethod,
-          amount: totalBelanja,
-        });
-
-        setResult(response.data.result);
-        setColor(response.data.color);
-        setConfidence(response.data.confidence);
-        setDetectedNominal(null);
-        setDetectedClass("");
-        setDetectedBox(null);
-
-        fetchTransactions();
-      } catch (error) {
-        console.log(error);
       }
-    }
-  };
+    );
 
-  const stopScan = () => {
-    setIsScanning(false);
+    const contentType =
+      response.headers.get("content-type") || "";
 
-      // fe ambil gambar dari camera
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  };
+    const responseBody = contentType.includes(
+      "application/json"
+    )
+      ? await response.json()
+      : await response.blob();
 
-  const captureFrame = async () => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-
-    if (!video || video.readyState !== 4) return;
-
-    const ctx = canvas.getContext("2d");
-
-    canvas.width = 640;
-    canvas.height = 480;
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const image = canvas.toDataURL("image/jpeg", 0.9);
-
-    try {
-      // === FRAME KAMERA DIKIRIM UNTUK DETEKSI NOMINAL UANG KERTAS ===
-      // Backend meneruskan gambar ini ke python/detect.py, lalu hasil nominalnya ditampilkan di UI.
-      const response = await axios.post("/detect", {
-        image,
-        payment_method: paymentMethod,
-        amount: totalBelanja,
-      });
-
-      setResult(response.data.result);
-      setColor(response.data.color);
-      setConfidence(response.data.confidence);
-      // Hasil nominal uang kertas yang terdeteksi oleh model.
-      setDetectedNominal(response.data.detected_nominal);
-      setDetectedClass(response.data.detected_class);
-      setDetectedBox(response.data.detected_box);
-
-      fetchTransactions();
-
-      if (response.data.detected_nominal && response.data.confidence >= 80) {
-        stopScan();
+    if (!response.ok) {
+      if (response.status === 401 && token) {
+        clearSession();
       }
-    } catch (error) {
-      console.log(error);
+
+      throw new Error(
+        responseBody?.error ||
+          responseBody?.message ||
+          "Terjadi kesalahan pada server."
+      );
     }
-  };
 
-  const hitungKembalian = () => {
-    setKembalian(Number(jumlahBayar) - Number(totalBelanja));
-  };
+    return responseBody;
+  }
 
-  const formatRupiah = (val) => {
-    if (!val && val !== 0) return "—";
-    return Number(val).toLocaleString("id-ID");
-  };
+  async function loadContracts() {
+    try {
+      const data = await apiRequest("/contracts");
 
-  const confidenceLevel =
-    confidence >= 85
-      ? "HIGH"
-      : confidence >= 60
-        ? "MEDIUM"
-        : confidence > 0
-          ? "LOW"
-          : "—";
+      setContracts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setGlobalError(error.message);
+    }
+  }
+
+  async function loadTransactions() {
+    try {
+      const data = await apiRequest("/transactions");
+
+      setTransactions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setGlobalError(error.message);
+    }
+  }
+
+  async function loadInitialData() {
+    setLoading(true);
+    setGlobalError("");
+    setGlobalMessage("");
+
+    await Promise.all([
+      loadContracts(),
+      loadTransactions(),
+    ]);
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (token) {
+      loadInitialData();
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function handleLogout() {
+    try {
+      await apiRequest("/auth/logout", {
+        method: "POST",
+      });
+    } catch (error) {
+      console.log("Logout server error:", error);
+    }
+
+    clearSession();
+  }
+
+  if (!token || !currentUser) {
+    return <LoginPage onLogin={saveSession} />;
+  }
 
   return (
-    <div style={s.root}>
-      <div style={s.header}>
-        <div>
-          <h2 style={s.title}>VaultScan</h2>
-          <p style={s.subtitle}>Deteksi Nominal & Keaslian Uang</p>
-        </div>
+    <div className="vault-app">
+      <Sidebar
+        activePage={activePage}
+        setActivePage={setActivePage}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+      />
 
-        <div
-          style={{
-            ...s.status,
-            background: isScanning ? "#dcfce7" : "#e2e8f0",
-            color: isScanning ? "#16a34a" : "#64748b",
-          }}
-        >
-          {isScanning ? "Scanning..." : "Standby"}
-        </div>
-      </div>
+      <main className="main-shell">
+        <Topbar
+          activePage={activePage}
+          currentUser={currentUser}
+          onRefresh={loadInitialData}
+        />
 
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Kamera Live</h3>
-
-        <div style={s.cameraWrap}>
-          <video ref={videoRef} autoPlay playsInline muted style={s.video} />
-
-          {detectedBox && (
-            <div
-              style={{
-                ...s.detectBox,
-                left: `${((detectedBox.x - detectedBox.width / 2) / 640) * 100}%`,
-                top: `${((detectedBox.y - detectedBox.height / 2) / 480) * 100}%`,
-                width: `${(detectedBox.width / 640) * 100}%`,
-                height: `${(detectedBox.height / 480) * 100}%`,
-                borderColor: color || "#22c55e",
-              }}
-            >
-              <div
-                style={{
-                  ...s.detectLabel,
-                  background: color || "#22c55e",
-                }}
-              >
-                {detectedClass || "Uang"}{" "}
-                {detectedNominal
-                  ? `· Rp ${Number(detectedNominal).toLocaleString("id-ID")}`
-                  : ""}
-              </div>
+        <section className="content">
+          {globalError && (
+            <div className="message-box message-error">
+              {globalError}
             </div>
           )}
 
-          <div style={s.guideFrame}>
-            <span style={s.guideText}>Arahkan uang ke area ini</span>
-          </div>
-
-          {isScanning && <div style={s.scanLine} />}
-        </div>
-      </div>
-
-      <div style={{ ...s.card, borderColor: color }}>
-        <div style={s.resultHeader}>
-          <div>
-            <h3 style={s.cardTitle}>Hasil Deteksi</h3>
-            <p style={s.smallText}>Status, nominal, dan confidence</p>
-          </div>
-
-          <div style={{ ...s.badge, color, background: color + "18" }}>
-            {result || "Belum Scan"}
-          </div>
-        </div>
-
-        <div style={s.nominalBox}>
-          <div style={s.label}>Nominal Terdeteksi</div>
-          <div style={s.nominalText}>
-            {detectedNominal ? `Rp ${formatRupiah(detectedNominal)}` : "—"}
-          </div>
-          <div style={s.classText}>
-            {detectedClass || "Belum ada class nominal"}
-          </div>
-        </div>
-
-        <div style={s.metrics}>
-          <div>
-            <div style={s.label}>Confidence</div>
-            <div style={s.metricValue}>
-              {confidence > 0 ? `${confidence}%` : "—"}
+          {globalMessage && (
+            <div className="message-box message-success">
+              {globalMessage}
             </div>
-          </div>
+          )}
 
-          <div>
-            <div style={s.label}>Keyakinan</div>
-            <div style={s.metricValue}>{confidenceLevel}</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Detail Transaksi</h3>
-
-        <label style={s.label}>Total Belanja</label>
-        <input
-          style={s.input}
-          type="number"
-          placeholder="Masukkan total belanja"
-          value={totalBelanja}
-          onChange={(e) => setTotalBelanja(e.target.value)}
-        />
-
-        <label style={s.label}>Jumlah Bayar</label>
-        <input
-          style={s.input}
-          type="number"
-          placeholder="Masukkan jumlah bayar"
-          value={jumlahBayar}
-          onChange={(e) => setJumlahBayar(e.target.value)}
-        />
-
-        <button style={s.blueBtn} onClick={hitungKembalian}>
-          Hitung Kembalian
-        </button>
-
-        {kembalian !== 0 && (
-          <div style={s.kembalianBox}>
-            {kembalian >= 0 ? "Kembalian" : "Kurang Bayar"}: Rp{" "}
-            {formatRupiah(Math.abs(kembalian))}
-          </div>
-        )}
-      </div>
-
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Metode Pembayaran</h3>
-
-        <div style={s.payRow}>
-          {[
-            { id: "cash", label: "Tunai" },
-            { id: "debit", label: "Debit" },
-            { id: "ewallet", label: "e-Wallet" },
-          ].map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setPaymentMethod(m.id)}
-              style={{
-                ...s.payBtn,
-                background: paymentMethod === m.id ? "#2563eb" : "#f8fafc",
-                color: paymentMethod === m.id ? "#fff" : "#334155",
-              }}
+          {loading ? (
+            <div className="empty-state">
+              Memuat data VaultScan...
+            </div>
+          ) : (
+            <div
+              key={activePage}
+              className="page-enter"
             >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              {activePage === "dashboard" && (
+                <DashboardPage
+                  contracts={contracts}
+                  transactions={transactions}
+                  currentUser={currentUser}
+                  setActivePage={setActivePage}
+                />
+              )}
 
-      <div style={s.actionRow}>
-        <button
-          style={{ ...s.actionBtn, background: "#2563eb" }}
-          onClick={startScan}
-          disabled={isScanning}
-        >
-          Mulai Scan
-        </button>
+              {activePage === "contracts" && (
+                <ContractsPage
+                  contracts={contracts}
+                  token={token}
+                  reloadContracts={loadContracts}
+                  setGlobalMessage={setGlobalMessage}
+                  setGlobalError={setGlobalError}
+                />
+              )}
 
-        <button
-          style={{ ...s.actionBtn, background: "#64748b" }}
-          onClick={stopScan}
-          disabled={!isScanning}
-        >
-          Stop
-        </button>
-      </div>
+              {activePage === "scanner" && (
+                <ScannerPage
+                  contracts={contracts}
+                  token={token}
+                  reloadTransactions={loadTransactions}
+                  reloadContracts={loadContracts}
+                />
+              )}
 
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Riwayat Transaksi</h3>
+              {activePage === "transactions" && (
+                <TransactionsPage
+                  transactions={transactions}
+                />
+              )}
 
-        {transactions.length === 0 ? (
-          <p style={s.smallText}>Belum ada transaksi</p>
-        ) : (
-          transactions.slice(0, 5).map((item) => (
-            <div key={item.id} style={s.historyItem}>
-              <div>
-                <b>{item.result}</b>
-                <div style={s.smallText}>
-                  {item.payment_method?.toUpperCase()} · Total: Rp{" "}
-                  {formatRupiah(item.amount)}
-                </div>
-                <div style={s.smallText}>
-                  Scan:{" "}
-                  {item.detected_nominal
-                    ? `Rp ${formatRupiah(item.detected_nominal)}`
-                    : "Belum terdeteksi"}
-                </div>
-                <div style={s.code}>{item.contract_code}</div>
-              </div>
-
-              <div style={{ textAlign: "right" }}>
-                <b>{item.confidence}%</b>
-                <div style={s.smallText}>{item.status}</div>
-              </div>
+              {activePage === "profile" && (
+                <ProfilePage
+                  currentUser={currentUser}
+                />
+              )}
             </div>
-          ))
-        )}
-      </div>
-
-      <canvas ref={canvasRef} style={{ display: "none" }} />
+          )}
+        </section>
+      </main>
     </div>
   );
 }
 
-const s = {
-  root: {
-    minHeight: "100vh",
-    maxWidth: 430,
-    margin: "0 auto",
-    padding: 16,
-    background: "#f0f4ff",
-    fontFamily: "Arial, sans-serif",
-  },
+function LoginPage({ onLogin }) {
+  const [username, setUsername] =
+    useState("supplier01");
 
-  header: {
-    background: "linear-gradient(135deg, #1d4ed8, #312e81)",
-    color: "#fff",
-    borderRadius: 22,
-    padding: 20,
-    marginBottom: 14,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+  const [password, setPassword] =
+    useState("vaultscan123");
 
-  title: {
-    margin: 0,
-    fontSize: 22,
-    fontWeight: 800,
-  },
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  subtitle: {
-    margin: "4px 0 0",
-    fontSize: 12,
-    opacity: 0.8,
-  },
+  async function submitLogin(event) {
+    event.preventDefault();
 
-  status: {
-    padding: "7px 12px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-  },
+    setLoading(true);
+    setError("");
 
-  card: {
-    background: "#fff",
-    border: "2px solid #e2e8f0",
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-    boxShadow: "0 2px 14px rgba(15,23,42,0.06)",
-  },
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username,
+            password,
+          }),
+        }
+      );
 
-  cardTitle: {
-    margin: "0 0 10px",
-    fontSize: 16,
-    color: "#0f172a",
-  },
+      const data = await response.json();
 
-  cameraWrap: {
-    position: "relative",
-    aspectRatio: "4 / 3",
-    background: "#0f172a",
-    borderRadius: 14,
-    overflow: "hidden",
-  },
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Username atau password salah."
+        );
+      }
 
-  video: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-  },
+      onLogin(data.token, data.user);
+    } catch (loginError) {
+      setError(loginError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  detectBox: {
-    position: "absolute",
-    border: "3px solid #22c55e",
-    borderRadius: 8,
-    boxShadow: "0 0 14px rgba(34,197,94,0.8)",
-    pointerEvents: "none",
-    zIndex: 10,
-  },
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-banner">
+          <div className="brand">
+            <div className="brand-mark">
+              <ShieldCheck size={22} />
+            </div>
 
-  detectLabel: {
-    position: "absolute",
-    top: -32,
-    left: 0,
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: 800,
-    padding: "5px 8px",
-    borderRadius: 6,
-    whiteSpace: "nowrap",
-  },
+            <div>
+              <p className="brand-title">
+                VaultScan
+              </p>
 
-  guideFrame: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    width: "72%",
-    height: "44%",
-    border: "2px dashed rgba(255,255,255,0.55)",
-    borderRadius: 12,
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingBottom: 8,
-  },
+              <p className="brand-subtitle">
+                Electronic Contract Security
+              </p>
+            </div>
+          </div>
 
-  guideText: {
-    background: "rgba(0,0,0,0.45)",
-    color: "#fff",
-    fontSize: 10,
-    padding: "4px 8px",
-    borderRadius: 999,
-  },
+          <h1>
+            Kontrak elektronik
+            <br />
+            lebih aman.
+          </h1>
 
-  scanLine: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: "50%",
-    height: 3,
-    background: "#38bdf8",
-    boxShadow: "0 0 14px #38bdf8",
-  },
+          <p>
+            Sistem verifikasi transaksi,
+            pengamanan kontrak, dan pendeteksian
+            uang tunai berbasis AI.
+          </p>
 
-  resultHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  },
+          <div className="login-feature">
+            <ShieldCheck size={17} />
+            Autentikasi JWT dan pembatasan role
+          </div>
 
-  badge: {
-    padding: "8px 12px",
-    borderRadius: 12,
-    fontSize: 13,
-    fontWeight: 800,
-  },
+          <div className="login-feature">
+            <FileText size={17} />
+            Dokumen kontrak tersimpan secara private
+          </div>
 
-  nominalBox: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: 14,
-    margin: "12px 0",
-  },
+          <div className="login-feature">
+            <ScanLine size={17} />
+            Verifikasi pembayaran dan uang tunai
+          </div>
+        </div>
 
-  nominalText: {
-    fontSize: 26,
-    fontWeight: 800,
-    color: "#0f172a",
-  },
+        <form
+          className="login-form"
+          onSubmit={submitLogin}
+        >
+          <h2>Masuk ke VaultScan</h2>
 
-  classText: {
-    color: "#64748b",
-    fontSize: 12,
-    fontFamily: "monospace",
-    marginTop: 4,
-  },
+          <p>
+            Gunakan akun admin, supplier, atau
+            distributor untuk mengakses data kontrak.
+          </p>
 
-  metrics: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
+          <div className="field-group">
+            <label className="field-label">
+              Username
+            </label>
 
-  label: {
-    fontSize: 11,
-    color: "#64748b",
-    fontWeight: 700,
-    display: "block",
-    marginBottom: 6,
-    marginTop: 10,
-  },
+            <input
+              className="field-control"
+              value={username}
+              onChange={(event) =>
+                setUsername(event.target.value)
+              }
+              placeholder="Contoh: supplier01"
+              required
+            />
+          </div>
 
-  metricValue: {
-    fontSize: 20,
-    fontWeight: 800,
-    color: "#0f172a",
-  },
+          <div
+            className="field-group"
+            style={{ marginTop: 13 }}
+          >
+            <label className="field-label">
+              Password
+            </label>
 
-  input: {
-    width: "100%",
-    padding: 12,
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    fontSize: 14,
-    marginBottom: 8,
-  },
+            <input
+              className="field-control"
+              type="password"
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
+              placeholder="Masukkan password"
+              required
+            />
+          </div>
 
-  blueBtn: {
-    width: "100%",
-    padding: 12,
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: 10,
-    fontWeight: 700,
-    marginTop: 6,
-  },
+          {error && (
+            <div className="message-box message-error">
+              {error}
+            </div>
+          )}
 
-  kembalianBox: {
-    marginTop: 12,
-    padding: 12,
-    background: "#f8fafc",
-    borderRadius: 10,
-    fontWeight: 700,
-  },
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={loading}
+            style={{ marginTop: 17 }}
+          >
+            <ShieldCheck size={16} />
 
-  payRow: {
-    display: "flex",
-    gap: 10,
-  },
+            {loading
+              ? "Memeriksa akun..."
+              : "Masuk"}
+          </button>
 
-  payBtn: {
-    flex: 1,
-    padding: 12,
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    fontWeight: 700,
-  },
+          <div className="login-help">
+            Akun demo: <b>supplier01</b>,{" "}
+            <b>distributor01</b>, atau <b>admin</b>.
+            <br />
+            Password demo: <b>vaultscan123</b>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
 
-  actionRow: {
-    display: "flex",
-    gap: 10,
-    marginBottom: 14,
-  },
+function Sidebar({
+  activePage,
+  setActivePage,
+  currentUser,
+  onLogout,
+}) {
+  const menus = [
+    {
+      key: "dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      key: "contracts",
+      label: "Kontrak Saya",
+      icon: ClipboardList,
+    },
+    {
+      key: "scanner",
+      label: "Verifikasi Uang",
+      icon: Camera,
+    },
+    {
+      key: "transactions",
+      label: "Transaksi",
+      icon: WalletCards,
+    },
+    {
+      key: "profile",
+      label: "Profil",
+      icon: UserCircle2,
+    },
+  ];
 
-  actionBtn: {
-    flex: 1,
-    padding: 14,
-    color: "#fff",
-    border: "none",
-    borderRadius: 12,
-    fontWeight: 800,
-  },
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">
+          <ShieldCheck size={22} />
+        </div>
 
-  historyItem: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: 12,
-    background: "#f8fafc",
-    borderRadius: 12,
-    marginBottom: 10,
-  },
+        <div>
+          <p className="brand-title">
+            VaultScan
+          </p>
 
-  smallText: {
-    fontSize: 12,
-    color: "#64748b",
-    margin: "3px 0",
-  },
+          <p className="brand-subtitle">
+            Contract Security
+          </p>
+        </div>
+      </div>
 
-  code: {
-    fontSize: 11,
-    color: "#94a3b8",
-    fontFamily: "monospace",
-    marginTop: 4,
-  },
-};
+      <p className="sidebar-label">
+        Menu utama
+      </p>
+
+      <nav className="nav-list">
+        {menus.map((menu) => {
+          const Icon = menu.icon;
+
+          return (
+            <button
+              key={menu.key}
+              className={`nav-button ${
+                activePage === menu.key
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                setActivePage(menu.key)
+              }
+            >
+              <Icon size={17} />
+
+              <span className="nav-text">
+                {menu.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="sidebar-bottom">
+        <div className="sidebar-user">
+          <p className="sidebar-user-name">
+            {currentUser.full_name}
+          </p>
+
+          <p className="sidebar-user-role">
+            {currentUser.role}
+          </p>
+        </div>
+
+        <button
+          className="nav-button"
+          onClick={onLogout}
+          style={{ marginTop: 8 }}
+        >
+          <LogOut size={17} />
+
+          <span className="nav-text">
+            Logout
+          </span>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function Topbar({
+  activePage,
+  currentUser,
+  onRefresh,
+}) {
+  const titleMap = {
+    dashboard: "Dashboard",
+    contracts: "Kontrak Elektronik",
+    scanner: "Verifikasi Uang",
+    transactions: "Riwayat Transaksi",
+    profile: "Profil Pengguna",
+  };
+
+  return (
+    <header className="topbar">
+      <div>
+        <h1 className="page-title">
+          {titleMap[activePage]}
+        </h1>
+
+        <p className="page-subtitle">
+          Selamat datang, {currentUser.full_name}.
+        </p>
+      </div>
+
+      <div className="topbar-actions">
+        <div className="status-chip">
+          <span className="status-dot" />
+          Backend aktif
+        </div>
+
+        <button
+          className="ghost-button"
+          onClick={onRefresh}
+        >
+          <RefreshCw size={15} />
+          Refresh
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function DashboardPage({
+  contracts,
+  transactions,
+  currentUser,
+  setActivePage,
+}) {
+  const approvedCount = contracts.filter(
+    (contract) =>
+      contract.contract_status === "APPROVED"
+  ).length;
+
+  const paidCount = contracts.filter(
+    (contract) =>
+      contract.contract_status === "PAID"
+  ).length;
+
+  return (
+    <>
+      <DashboardHero
+        currentUser={currentUser}
+        contracts={contracts}
+        setActivePage={setActivePage}
+      />
+
+      <section className="grid-cards">
+        <SummaryCard
+          label="Total Kontrak"
+          value={contracts.length}
+          icon={ClipboardList}
+          delay={0}
+        />
+
+        <SummaryCard
+          label="Approved"
+          value={approvedCount}
+          icon={CheckCircle2}
+          delay={90}
+        />
+
+        <SummaryCard
+          label="Sudah Dibayar"
+          value={paidCount}
+          icon={WalletCards}
+          delay={180}
+        />
+
+        <SummaryCard
+          label="Total Transaksi"
+          value={transactions.length}
+          icon={Activity}
+          delay={270}
+        />
+      </section>
+
+      <section className="two-column">
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">
+                Kontrak terbaru
+              </h2>
+
+              <p className="panel-description">
+                Data kontrak sesuai hak akses akun.
+              </p>
+            </div>
+          </div>
+
+          <ContractTable
+            contracts={contracts.slice(0, 6)}
+            compact
+          />
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">
+                Informasi akses
+              </h2>
+
+              <p className="panel-description">
+                Hak akses ditentukan oleh backend.
+              </p>
+            </div>
+          </div>
+
+          <div className="panel-body profile-list">
+            <ProfileRow
+              label="Nama pengguna"
+              value={currentUser.full_name}
+            />
+
+            <ProfileRow
+              label="Username"
+              value={currentUser.username}
+            />
+
+            <ProfileRow
+              label="Role"
+              value={currentUser.role}
+            />
+
+            <ProfileRow
+              label="Keamanan"
+              value="JWT + ownership validation"
+            />
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function DashboardHero({
+  currentUser,
+  contracts,
+  setActivePage,
+}) {
+  return (
+    <section className="dashboard-hero">
+      <div className="hero-glow hero-glow-one" />
+      <div className="hero-glow hero-glow-two" />
+
+      <div className="hero-content">
+        <div className="hero-badge">
+          <Sparkles size={14} />
+          Secure Contract Workspace
+        </div>
+
+        <h2>
+          Selamat datang kembali,
+          <br />
+          <span>{currentUser.full_name}</span>
+        </h2>
+
+        <p>
+          Pantau kontrak elektronik, verifikasi
+          transaksi, dan kelola dokumen dengan sistem
+          keamanan berlapis.
+        </p>
+
+        <div className="hero-actions">
+          <button
+            className="hero-button-primary"
+            onClick={() =>
+              setActivePage("contracts")
+            }
+          >
+            Lihat kontrak
+            <ArrowRight size={16} />
+          </button>
+
+          <button
+            className="hero-button-secondary"
+            onClick={() =>
+              setActivePage("scanner")
+            }
+          >
+            <ScanLine size={16} />
+            Mulai verifikasi
+          </button>
+        </div>
+      </div>
+
+      <div className="hero-security-card">
+        <div className="hero-security-icon">
+          <LockKeyhole size={28} />
+        </div>
+
+        <p className="hero-security-label">
+          Security Status
+        </p>
+
+        <p className="hero-security-value">
+          Protected
+        </p>
+
+        <div className="hero-security-list">
+          <span>
+            <ShieldCheck size={14} />
+            JWT Authentication
+          </span>
+
+          <span>
+            <Database size={14} />
+            Ownership Validation
+          </span>
+
+          <span>
+            <FileText size={14} />
+            Private Document Storage
+          </span>
+        </div>
+
+        <div className="hero-contract-count">
+          {contracts.length} kontrak dapat diakses
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  icon: Icon,
+  delay = 0,
+}) {
+  return (
+    <article
+      className="summary-card summary-card-animated"
+      style={{
+        animationDelay: `${delay}ms`,
+      }}
+    >
+      <div className="summary-top">
+        <div className="summary-icon">
+          <Icon size={18} />
+        </div>
+
+        <Gauge size={17} color="#94a3b8" />
+      </div>
+
+      <p className="summary-label">
+        {label}
+      </p>
+
+      <p className="summary-value">
+        <AnimatedNumber value={value} />
+      </p>
+    </article>
+  );
+}
+
+function AnimatedNumber({ value }) {
+  const [displayValue, setDisplayValue] =
+    useState(0);
+
+  useEffect(() => {
+    const target = Number(value || 0);
+    const duration = 550;
+    const startTime = performance.now();
+
+    function updateNumber(currentTime) {
+      const progress = Math.min(
+        (currentTime - startTime) / duration,
+        1
+      );
+
+      const easedProgress =
+        1 - Math.pow(1 - progress, 3);
+
+      setDisplayValue(
+        Math.round(target * easedProgress)
+      );
+
+      if (progress < 1) {
+        requestAnimationFrame(updateNumber);
+      }
+    }
+
+    const animationFrame =
+      requestAnimationFrame(updateNumber);
+
+    return () =>
+      cancelAnimationFrame(animationFrame);
+  }, [value]);
+
+  return displayValue;
+}
+
+function ContractsPage({
+  contracts,
+  token,
+  reloadContracts,
+  setGlobalMessage,
+  setGlobalError,
+}) {
+  const [uploadingId, setUploadingId] =
+    useState(null);
+
+  async function uploadDocument(
+    contractId,
+    file
+  ) {
+    if (!file) return;
+
+    setUploadingId(contractId);
+    setGlobalError("");
+    setGlobalMessage("");
+
+    try {
+      const formData = new FormData();
+
+      formData.append("document", file);
+
+      const response = await fetch(
+        `${API_BASE_URL}/contracts/${contractId}/document`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Upload dokumen gagal."
+        );
+      }
+
+      setGlobalMessage(data.message);
+
+      await reloadContracts();
+    } catch (error) {
+      setGlobalError(error.message);
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  async function downloadDocument(
+    contractId
+  ) {
+    setGlobalError("");
+    setGlobalMessage("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/contracts/${contractId}/document`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+
+        throw new Error(
+          data.error ||
+            "Download dokumen gagal."
+        );
+      }
+
+      const blob = await response.blob();
+
+      const temporaryUrl =
+        URL.createObjectURL(blob);
+
+      const anchor =
+        document.createElement("a");
+
+      anchor.href = temporaryUrl;
+      anchor.download =
+        `VaultScan-DK${contractId}.pdf`;
+
+      document.body.appendChild(anchor);
+
+      anchor.click();
+      anchor.remove();
+
+      URL.revokeObjectURL(temporaryUrl);
+
+      setGlobalMessage(
+        "Dokumen kontrak berhasil di-download."
+      );
+    } catch (error) {
+      setGlobalError(error.message);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">
+            Daftar kontrak elektronik
+          </h2>
+
+          <p className="panel-description">
+            Supplier dan distributor hanya melihat
+            kontrak miliknya sendiri.
+          </p>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Kode</th>
+              <th>Nama kontrak</th>
+              <th>Produk</th>
+              <th>Nominal</th>
+              <th>Status</th>
+              <th>Dokumen</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {contracts.length === 0 ? (
+              <tr>
+                <td colSpan="7">
+                  <div className="empty-state">
+                    Belum ada kontrak yang dapat
+                    ditampilkan.
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              contracts.map((contract) => (
+                <tr key={contract.id}>
+                  <td>
+                    <b>
+                      {contract.contract_code}
+                    </b>
+                  </td>
+
+                  <td>
+                    {contract.contract_name}
+                  </td>
+
+                  <td>
+                    {contract.product_name}
+                  </td>
+
+                  <td>
+                    {formatRupiah(
+                      contract.contract_amount
+                    )}
+                  </td>
+
+                  <td>
+                    <span
+                      className={`badge badge-${statusClass(
+                        contract.contract_status
+                      )}`}
+                    >
+                      {contract.contract_status}
+                    </span>
+                  </td>
+
+                  <td>
+                    {contract.document_original_name ||
+                      contract.document_name ||
+                      "-"}
+                  </td>
+
+                  <td>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 7,
+                      }}
+                    >
+                      <label className="secondary-button">
+                        <Upload size={14} />
+
+                        {uploadingId === contract.id
+                          ? "Uploading..."
+                          : "Upload"}
+
+                        <input
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          hidden
+                          disabled={
+                            uploadingId ===
+                            contract.id
+                          }
+                          onChange={(event) => {
+                            const file =
+                              event.target.files?.[0];
+
+                            uploadDocument(
+                              contract.id,
+                              file
+                            );
+
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        className="ghost-button"
+                        onClick={() =>
+                          downloadDocument(
+                            contract.id
+                          )
+                        }
+                      >
+                        <FileText size={14} />
+                        Download
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ContractTable({
+  contracts,
+  compact = false,
+}) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Kode</th>
+            <th>Status</th>
+
+            {!compact && <th>Nominal</th>}
+          </tr>
+        </thead>
+
+        <tbody>
+          {contracts.length === 0 ? (
+            <tr>
+              <td colSpan="3">
+                <div className="empty-state">
+                  Belum ada data kontrak.
+                </div>
+              </td>
+            </tr>
+          ) : (
+            contracts.map((contract) => (
+              <tr key={contract.id}>
+                <td>
+                  <b>
+                    {contract.contract_code}
+                  </b>
+                </td>
+
+                <td>
+                  <span
+                    className={`badge badge-${statusClass(
+                      contract.contract_status
+                    )}`}
+                  >
+                    {contract.contract_status}
+                  </span>
+                </td>
+
+                {!compact && (
+                  <td>
+                    {formatRupiah(
+                      contract.contract_amount
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ScannerPage({
+  contracts,
+  token,
+  reloadTransactions,
+  reloadContracts,
+}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const [
+    selectedContractId,
+    setSelectedContractId,
+  ] = useState("");
+
+  const [
+    paymentMethod,
+    setPaymentMethod,
+  ] = useState("ewallet");
+
+  const [cameraActive, setCameraActive] =
+    useState(false);
+
+  const [processing, setProcessing] =
+    useState(false);
+
+  const [result, setResult] =
+    useState(null);
+
+  const [error, setError] =
+    useState("");
+
+  const approvedContracts = useMemo(
+    () =>
+      contracts.filter(
+        (contract) =>
+          contract.contract_status ===
+          "APPROVED"
+      ),
+    [contracts]
+  );
+
+  const selectedContract =
+    approvedContracts.find(
+      (contract) =>
+        String(contract.id) ===
+        String(selectedContractId)
+    );
+
+  async function startCamera() {
+    setError("");
+
+    try {
+      const stream =
+        await navigator.mediaDevices.getUserMedia(
+          {
+            video: {
+              facingMode: "environment",
+            },
+            audio: false,
+          }
+        );
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+
+        await videoRef.current.play();
+      }
+
+      setCameraActive(true);
+    } catch (cameraError) {
+      setError(
+        "Kamera tidak dapat diakses. Periksa permission browser."
+      );
+    }
+  }
+
+  function stopCamera() {
+    streamRef.current
+      ?.getTracks()
+      .forEach((track) => track.stop());
+
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraActive(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  function captureImageBase64() {
+    if (
+      !videoRef.current ||
+      !canvasRef.current
+    ) {
+      return null;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    canvas.width =
+      video.videoWidth || 1280;
+
+    canvas.height =
+      video.videoHeight || 720;
+
+    const context =
+      canvas.getContext("2d");
+
+    context.drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    return canvas.toDataURL(
+      "image/jpeg",
+      0.86
+    );
+  }
+
+  async function submitVerification() {
+    if (!selectedContractId) {
+      setError(
+        "Pilih kontrak terlebih dahulu."
+      );
+
+      return;
+    }
+
+    if (
+      paymentMethod === "cash" &&
+      !cameraActive
+    ) {
+      setError(
+        "Aktifkan kamera sebelum melakukan verifikasi uang tunai."
+      );
+
+      return;
+    }
+
+    setProcessing(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const image =
+        paymentMethod === "cash"
+          ? captureImageBase64()
+          : null;
+
+      const response = await fetch(
+        `${API_BASE_URL}/detect`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              `Bearer ${token}`,
+          },
+
+          body: JSON.stringify({
+            contract_id:
+              Number(selectedContractId),
+
+            payment_method:
+              paymentMethod,
+
+            image,
+          }),
+        }
+      );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Verifikasi transaksi gagal."
+        );
+      }
+
+      setResult(data);
+
+      await Promise.all([
+        reloadTransactions(),
+        reloadContracts(),
+      ]);
+    } catch (verificationError) {
+      setError(
+        verificationError.message
+      );
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <section className="scan-grid">
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">
+              Kamera verifikasi uang
+            </h2>
+
+            <p className="panel-description">
+              Kamera digunakan jika metode
+              pembayaran tunai dipilih.
+            </p>
+          </div>
+        </div>
+
+        <div className="panel-body">
+          <div className="camera-wrap">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              style={{
+                display: cameraActive
+                  ? "block"
+                  : "none",
+              }}
+            />
+
+            {!cameraActive && (
+              <div className="camera-placeholder">
+                Kamera belum diaktifkan
+              </div>
+            )}
+
+            {cameraActive && (
+              <>
+                <div className="guide-frame">
+                  <span className="guide-label">
+                    Arahkan uang ke area
+                    pemindaian
+                  </span>
+                </div>
+
+                <div className="scan-line" />
+              </>
+            )}
+          </div>
+
+          <canvas
+            ref={canvasRef}
+            style={{
+              display: "none",
+            }}
+          />
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginTop: 13,
+            }}
+          >
+            {!cameraActive ? (
+              <button
+                className="primary-button"
+                onClick={startCamera}
+              >
+                <Camera size={15} />
+                Aktifkan kamera
+              </button>
+            ) : (
+              <button
+                className="danger-button"
+                onClick={stopCamera}
+              >
+                <Camera size={15} />
+                Matikan kamera
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">
+              Proses transaksi
+            </h2>
+
+            <p className="panel-description">
+              Harga final diambil langsung
+              dari database.
+            </p>
+          </div>
+        </div>
+
+        <div className="panel-body">
+          <div className="field-group">
+            <label className="field-label">
+              Kontrak approved
+            </label>
+
+            <select
+              className="field-control"
+              value={selectedContractId}
+              onChange={(event) =>
+                setSelectedContractId(
+                  event.target.value
+                )
+              }
+            >
+              <option value="">
+                Pilih kontrak
+              </option>
+
+              {approvedContracts.map(
+                (contract) => (
+                  <option
+                    key={contract.id}
+                    value={contract.id}
+                  >
+                    {contract.contract_code} —{" "}
+                    {formatRupiah(
+                      contract.contract_amount
+                    )}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div
+            className="field-group"
+            style={{
+              marginTop: 12,
+            }}
+          >
+            <label className="field-label">
+              Metode pembayaran
+            </label>
+
+            <select
+              className="field-control"
+              value={paymentMethod}
+              onChange={(event) =>
+                setPaymentMethod(
+                  event.target.value
+                )
+              }
+            >
+              <option value="cash">
+                Tunai
+              </option>
+
+              <option value="debit">
+                Debit
+              </option>
+
+              <option value="ewallet">
+                E-Wallet
+              </option>
+            </select>
+          </div>
+
+          {selectedContract && (
+            <div
+              className="result-card"
+              style={{
+                marginTop: 14,
+              }}
+            >
+              <div className="field-label">
+                Nilai kontrak resmi
+              </div>
+
+              <p className="result-nominal">
+                {formatRupiah(
+                  selectedContract.contract_amount
+                )}
+              </p>
+
+              <span className="badge badge-approved">
+                {
+                  selectedContract.contract_status
+                }
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div className="message-box message-error">
+              {error}
+            </div>
+          )}
+
+          {result && (
+            <div className="message-box message-success">
+              <b>{result.message}</b>
+              <br />
+              Kontrak: {result.contract_code}
+              <br />
+              Nominal:{" "}
+              {formatRupiah(result.amount)}
+              <br />
+              Hasil: {result.result}
+              <br />
+              Confidence: {result.confidence}%
+            </div>
+          )}
+
+          <button
+            className="primary-button"
+            onClick={submitVerification}
+            disabled={processing}
+            style={{
+              marginTop: 14,
+              width: "100%",
+            }}
+          >
+            <ScanLine size={16} />
+
+            {processing
+              ? "Memproses..."
+              : "Proses verifikasi"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TransactionsPage({
+  transactions,
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">
+            Riwayat transaksi
+          </h2>
+
+          <p className="panel-description">
+            Data transaksi ditampilkan
+            berdasarkan role dan kepemilikan
+            kontrak.
+          </p>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Kode kontrak</th>
+              <th>Metode</th>
+              <th>Nominal</th>
+              <th>Hasil</th>
+              <th>Status</th>
+              <th>Nominal terdeteksi</th>
+              <th>Waktu</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan="8">
+                  <div className="empty-state">
+                    Belum ada transaksi yang
+                    dapat ditampilkan.
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              transactions.map(
+                (transaction) => (
+                  <tr key={transaction.id}>
+                    <td>
+                      {transaction.id}
+                    </td>
+
+                    <td>
+                      <b>
+                        {transaction.contract_code ||
+                          "-"}
+                      </b>
+                    </td>
+
+                    <td>
+                      {
+                        transaction.payment_method
+                      }
+                    </td>
+
+                    <td>
+                      {formatRupiah(
+                        transaction.amount
+                      )}
+                    </td>
+
+                    <td>
+                      {transaction.result}
+                    </td>
+
+                    <td>
+                      <span
+                        className={`badge badge-${statusClass(
+                          transaction.status
+                        )}`}
+                      >
+                        {transaction.status}
+                      </span>
+                    </td>
+
+                    <td>
+                      {transaction.detected_nominal
+                        ? formatRupiah(
+                            transaction.detected_nominal
+                          )
+                        : "-"}
+                    </td>
+
+                    <td>
+                      {formatDate(
+                        transaction.created_at
+                      )}
+                    </td>
+                  </tr>
+                )
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ProfilePage({ currentUser }) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">
+            Profil pengguna
+          </h2>
+
+          <p className="panel-description">
+            Informasi akun dibaca dari token JWT.
+          </p>
+        </div>
+      </div>
+
+      <div className="panel-body profile-list">
+        <ProfileRow
+          label="Nama lengkap"
+          value={currentUser.full_name}
+        />
+
+        <ProfileRow
+          label="Username"
+          value={currentUser.username}
+        />
+
+        <ProfileRow
+          label="Role"
+          value={currentUser.role}
+        />
+
+        <ProfileRow
+          label="User ID"
+          value={currentUser.id}
+        />
+
+        <ProfileRow
+          label="Proteksi akses"
+          value="JWT + validasi ownership"
+        />
+      </div>
+    </section>
+  );
+}
+
+function ProfileRow({ label, value }) {
+  return (
+    <div className="profile-row">
+      <span className="profile-label">
+        {label}
+      </span>
+
+      <span className="profile-value">
+        {value}
+      </span>
+    </div>
+  );
+}
 
 export default App;
